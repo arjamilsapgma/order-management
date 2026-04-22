@@ -47,46 +47,82 @@ async function connectMongo() {
 }
 
 // API Routes
+function buildOrdersQuery(queryReq: any): any {
+  const { searchField, searchText, statusFilters } = queryReq;
+  let query: any = {};
+  
+  if (searchText && searchField) {
+    const searchStr = String(searchText).trim();
+    const field = String(searchField);
+    
+    const orConditions: any[] = [
+      { [field]: { $regex: searchStr, $options: 'i' } }
+    ];
+    
+    const numValue = Number(searchStr);
+    if (!isNaN(numValue)) {
+      orConditions.push({ [field]: numValue });
+    }
+    
+    query.$or = orConditions;
+  }
+
+  if (statusFilters) {
+    const statuses = (statusFilters as string).split(',').filter(Boolean);
+    if (statuses.length > 0) {
+      let statusOrConditions: any[] = [];
+      
+      statuses.forEach(s => {
+        const lower = s.toLowerCase();
+        if (lower === 'not shipped' || lower === 'not-shipped') {
+          statusOrConditions.push({ Status: { $not: { $regex: 'shipped', $options: 'i' } } });
+        } else {
+          statusOrConditions.push({ Status: { $regex: s, $options: 'i' } });
+        }
+      });
+      
+      if (query.$or) {
+        query.$and = [
+          { $or: query.$or },
+          { $or: statusOrConditions }
+        ];
+        delete query.$or;
+      } else {
+        query.$or = statusOrConditions;
+      }
+    }
+  }
+  return query;
+}
+
 app.get('/api/orders', async (req, res) => {
   try {
-    const { page = 1, limit = 50, searchField, searchText, statusFilters } = req.query;
+    const { page = 1, limit = 50 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     
-    let query: any = {};
-    
-    // Improved search logic to handle numeric fields and partial string matches
-    if (searchText && searchField) {
-      const searchStr = String(searchText).trim();
-      const field = String(searchField);
-      
-      const orConditions: any[] = [
-        { [field]: { $regex: searchStr, $options: 'i' } }
-      ];
-      
-      // If the search text is numeric, also try an exact numeric match
-      const numValue = Number(searchStr);
-      if (!isNaN(numValue)) {
-        orConditions.push({ [field]: numValue });
-      }
-      
-      query.$or = orConditions;
-    }
-
-    if (statusFilters) {
-      const statuses = (statusFilters as string).split(',').filter(Boolean);
-      if (statuses.length > 0) {
-        // Use case-insensitive exact match for statuses
-        query.Status = { $in: statuses.map(s => new RegExp(`^${s}$`, 'i')) };
-      }
-    }
+    const query = buildOrdersQuery(req.query);
 
     const total = await db.collection('orders_management').countDocuments(query);
-    const orders = await db.collection('orders_management')
-      .find(query)
-      .sort({ OrderDate: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .toArray();
+    
+    const orders = await db.collection('orders_management').aggregate([
+      { $match: query },
+      {
+        $addFields: {
+          parsedDateForSort: {
+            $convert: {
+              input: "$OrderDate",
+              to: "date",
+              onError: new Date("1970-01-01T00:00:00Z"),
+              onNull: new Date("1970-01-01T00:00:00Z")
+            }
+          }
+        }
+      },
+      { $sort: { parsedDateForSort: -1, _id: -1 } },
+      { $skip: skip },
+      { $limit: Number(limit) },
+      { $project: { parsedDateForSort: 0 } }
+    ]).toArray();
 
     res.json({
       orders,
@@ -96,7 +132,45 @@ app.get('/api/orders', async (req, res) => {
       hasNextPage: skip + orders.length < total
     });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+app.get('/api/orders/export', async (req, res) => {
+  try {
+    const query = buildOrdersQuery(req.query);
+    
+    const orders = await db.collection('orders_management').aggregate([
+      { $match: query },
+      {
+        $addFields: {
+          parsedDateForSort: {
+            $convert: {
+              input: "$OrderDate",
+              to: "date",
+              onError: new Date("1970-01-01T00:00:00Z"),
+              onNull: new Date("1970-01-01T00:00:00Z")
+            }
+          }
+        }
+      },
+      { $sort: { parsedDateForSort: -1, _id: -1 } },
+      { $project: { parsedDateForSort: 0, _id: 0, Code: 0 } } // Exclude internal keys
+    ]).toArray();
+
+    const worksheet = xlsx.utils.json_to_sheet(orders);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Reconciliation');
+    
+    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    res.setHeader('Content-Disposition', 'attachment; filename="export.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch(error) {
+    console.error(error);
+    res.status(500).json({error: 'Failed to export orders'});
   }
 });
 

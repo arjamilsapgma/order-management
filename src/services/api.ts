@@ -30,6 +30,21 @@ export const api = {
     return res.json();
   },
 
+  async exportOrders(params: { 
+    searchField?: string; 
+    searchText?: string; 
+    statusFilters?: string[];
+  } = {}): Promise<Blob> {
+    const query = new URLSearchParams();
+    if (params.searchField) query.append('searchField', params.searchField);
+    if (params.searchText) query.append('searchText', params.searchText);
+    if (params.statusFilters?.length) query.append('statusFilters', params.statusFilters.join(','));
+
+    const res = await fetch(`${API_BASE}/orders/export?${query.toString()}`);
+    if (!res.ok) throw new Error('Failed to export orders');
+    return res.blob();
+  },
+
   async createOrder(order: Partial<OrderRecord>): Promise<any> {
     const res = await fetch(`${API_BASE}/orders`, {
       method: 'POST',
