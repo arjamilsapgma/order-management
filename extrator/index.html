@@ -1,0 +1,1521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enterprise AI Extractor V4</title>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root{
+      --bg:#f3f6fb;
+      --panel:#ffffff;
+      --panel-2:#f8fafc;
+      --line:#e5e7eb;
+      --text:#0f172a;
+      --muted:#64748b;
+      --brand:#2563eb;
+      --brand-2:#1d4ed8;
+      --ok:#15803d;
+      --ok-bg:#dcfce7;
+      --warn:#b45309;
+      --warn-bg:#fef3c7;
+      --bad:#b91c1c;
+      --bad-bg:#fee2e2;
+      --shadow:0 10px 30px rgba(2, 8, 23, 0.06);
+      --radius:18px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:Inter, Segoe UI, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at top left, #e8f0ff 0%, transparent 35%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+    }
+
+    .app{
+      max-width:1500px;
+      margin:0 auto;
+      padding:24px;
+    }
+
+    .hero{
+      background:linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #2563eb 100%);
+      color:#fff;
+      border-radius:24px;
+      padding:28px 30px;
+      box-shadow:var(--shadow);
+      margin-bottom:18px;
+    }
+
+    .hero h1{
+      margin:0 0 8px;
+      font-size:32px;
+      line-height:1.15;
+      letter-spacing:-0.02em;
+    }
+
+    .hero p{
+      margin:0;
+      color:rgba(255,255,255,.88);
+      max-width:980px;
+      font-size:15px;
+      line-height:1.6;
+    }
+
+    .top-grid{
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap:18px;
+      align-items:start;
+    }
+
+    .sidebar, .main-panel{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+
+    .sidebar{
+      padding:18px;
+      position:sticky;
+      top:20px;
+    }
+
+    .side-title{
+      font-size:15px;
+      font-weight:800;
+      margin:0 0 14px;
+    }
+
+    .step{
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+      padding:14px 12px;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:var(--panel-2);
+      margin-bottom:10px;
+    }
+
+    .step.no-margin{margin-bottom:0}
+    .step-num{
+      min-width:34px;
+      height:34px;
+      border-radius:50%;
+      background:var(--brand);
+      color:#fff;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:800;
+      font-size:14px;
+      box-shadow:0 6px 16px rgba(37,99,235,.25);
+    }
+    .step h3{
+      margin:0 0 4px;
+      font-size:14px;
+    }
+    .step p{
+      margin:0;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.5;
+    }
+
+    .main-panel{
+      padding:18px;
+    }
+
+    .toolbar{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+    }
+
+    .toolbar h2{
+      margin:0;
+      font-size:20px;
+      letter-spacing:-0.01em;
+    }
+
+    .tab-btn{
+      width:100%;
+      text-align:left;
+      border:none;
+      border-radius:12px;
+      padding:10px 14px;
+      font-weight:800;
+      cursor:pointer;
+      background:#eef2ff;
+      color:#1e3a8a;
+    }
+
+    .tab-btn.active{
+      background:var(--brand);
+      color:#fff;
+      box-shadow:0 8px 18px rgba(37,99,235,.2);
+    }
+
+    .tab{ display:none; }
+    .tab.active{ display:block; }
+
+    .card-grid{
+      display:grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap:12px;
+      margin:14px 0 18px;
+    }
+
+    .stat{
+      background:linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px;
+    }
+    .stat .label{
+      color:var(--muted);
+      font-size:12px;
+      margin-bottom:8px;
+      font-weight:600;
+    }
+    .stat .value{
+      font-size:28px;
+      font-weight:900;
+      letter-spacing:-0.02em;
+    }
+
+    .section{
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:16px;
+      background:#fff;
+      margin-bottom:14px;
+    }
+
+    .section h3{
+      margin:0 0 6px;
+      font-size:17px;
+    }
+
+    .section p{
+      margin:0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.6;
+    }
+
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      margin-top:14px;
+    }
+
+    .filebox{
+      min-width:240px;
+      flex:1 1 260px;
+      border:1px dashed #cbd5e1;
+      background:#fbfdff;
+      border-radius:14px;
+      padding:12px;
+    }
+
+    .filebox label{
+      display:block;
+      font-size:12px;
+      font-weight:800;
+      margin-bottom:8px;
+      color:#334155;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+
+    input[type=file]{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:8px;
+      background:#fff;
+      font-size:13px;
+    }
+
+    button{
+      border:none;
+      border-radius:12px;
+      padding:11px 16px;
+      font-size:14px;
+      font-weight:800;
+      cursor:pointer;
+      transition:.18s ease;
+    }
+
+    button.primary{
+      background:var(--brand);
+      color:#fff;
+      box-shadow:0 10px 20px rgba(37,99,235,.18);
+    }
+
+    button.primary:hover{ background:var(--brand-2); transform:translateY(-1px); }
+    button.secondary{
+      background:#fff;
+      color:var(--text);
+      border:1px solid var(--line);
+    }
+    button.secondary:hover{ background:#f8fafc; }
+    button:disabled{ opacity:.55; cursor:not-allowed; transform:none !important; }
+
+    .status-bar{
+      margin-top:14px;
+      padding:12px 14px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:var(--panel-2);
+      font-size:13px;
+      color:#334155;
+    }
+
+    .status-ok{ background:var(--ok-bg); color:var(--ok); border-color:#bbf7d0; }
+    .status-bad{ background:var(--bad-bg); color:var(--bad); border-color:#fecaca; }
+    .status-warn{ background:var(--warn-bg); color:var(--warn); border-color:#fde68a; }
+
+    .preview-card{
+      margin-top:16px;
+      border:1px solid var(--line);
+      border-radius:18px;
+      overflow:hidden;
+      background:#fff;
+      width:100%;
+      max-width:100%;
+    }
+
+    .preview-head{
+      padding:14px 16px;
+      border-bottom:1px solid var(--line);
+      background:#f8fafc;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .preview-head h4{
+      margin:0;
+      font-size:15px;
+    }
+
+    .preview-head span{
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    .table-wrap{
+      max-height:460px;
+      max-width:100%;
+      width:100%;
+      overflow:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+    }
+
+    table{
+      border-collapse:collapse;
+      width:max-content;
+      min-width:100%;
+      max-width:none;
+      background:#fff;
+    }
+
+    th, td{
+      padding:9px 10px;
+      border-bottom:1px solid #edf2f7;
+      border-right:1px solid #edf2f7;
+      font-size:12.5px;
+      white-space:nowrap;
+    }
+
+    th{
+      position:sticky;
+      top:0;
+      z-index:2;
+      background:#f8fafc;
+      font-weight:800;
+      color:#334155;
+    }
+
+    tr.mismatch td{ background:#fef2f2; }
+    tr.uncertain td{ background:#fff7ed; }
+    tr.unpaid td{ background:#fee2e2; }
+    .text-ok{color:var(--ok);font-weight:800}
+    .text-bad{color:var(--bad);font-weight:800}
+    .text-warn{color:var(--warn);font-weight:800}
+
+    .info-strip{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      gap:12px;
+      margin-top:14px;
+    }
+
+    .mini{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#fbfdff;
+      padding:12px;
+    }
+
+    .mini h5{margin:0 0 6px;font-size:13px}
+    .mini p{margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+
+    .footer-note{
+      margin-top:18px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.7;
+    }
+
+    @media (max-width:1180px){
+      .top-grid{grid-template-columns:1fr}
+      .sidebar{position:static}
+      .card-grid{grid-template-columns:repeat(2,1fr)}
+      .info-strip{grid-template-columns:1fr}
+    }
+
+    @media (max-width:760px){
+      body{overflow-x:hidden}
+      .app{padding:14px}
+      .hero{padding:22px}
+      .hero h1{font-size:26px}
+      .main-panel{padding:12px}
+      .section{padding:12px}
+      .card-grid{grid-template-columns:1fr}
+      .preview-head{padding:12px}
+      .table-wrap{max-height:360px}
+      th, td{padding:7px 8px;font-size:11px}
+      .filebox{min-width:100%;flex:1 1 100%}
+      button{width:100%}
+      .row{align-items:stretch}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <h1>Order Validation Dashboard - Enterprise FINAL V4</h1>
+      <p>
+        Browser-based extractor and packing list matcher with stronger last-name extraction, tolerance for single-word names,
+        fixed stage-2 scoring, and cleaner mismatch review.
+      </p>
+    </section>
+
+    <div class="top-grid">
+      <aside class="sidebar">
+        <h2 class="side-title">Workflow</h2>
+        <div style="margin-bottom:14px;display:flex;flex-direction:column;gap:10px;">
+          <button class="tab-btn active" data-tab="extractTab">Step 1: Extract</button>
+          <button class="tab-btn" data-tab="matchTab">Step 2: Match</button>
+        </div>
+
+        <div class="step">
+          <div class="step-num">1</div>
+          <div>
+            <h3>Upload Raw Order CSV</h3>
+            <p>Use the original order export as input for player extraction.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">2</div>
+          <div>
+            <h3>Extract Player Data</h3>
+            <p>Create the cleaned order file with player number, initials, and last-name columns.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">3</div>
+          <div>
+            <h3>Upload Packing List</h3>
+            <p>Upload the packing list workbook together with the cleaned order file.</p>
+          </div>
+        </div>
+
+        <div class="step no-margin">
+          <div class="step-num">4</div>
+          <div>
+            <h3>Export Final Packing List</h3>
+            <p>Download the reviewed workbook. Original structure stays unchanged and review columns are added at the end.</p>
+          </div>
+        </div>
+
+        <div class="footer-note">
+          Best use case: open this HTML directly in Chrome or Edge. No Python installation is required.
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <div class="toolbar">
+          <h2>Processing Console</h2>
+        </div>
+
+        <section id="extractTab" class="tab active">
+          <div class="section">
+            <h3>Player Details Extractor</h3>
+            <p>
+              Upload the raw order CSV. V4 strengthens extraction for Player Name, Player Last Name, Last-Name, LastName,
+              and single-word last names like Herman, Gomez, Anderson, and similar values.
+            </p>
+
+            <div class="row">
+              <div class="filebox">
+                <label>Raw Order CSV</label>
+                <input type="file" id="rawOrdersFile" accept=".csv" />
+              </div>
+            </div>
+
+            <div class="row">
+              <button class="primary" id="extractBtn">Extract Order File</button>
+              <button class="secondary" id="downloadExtractBtn" disabled>Download Extracted CSV</button>
+            </div>
+
+            <div id="extractStatus" class="status-bar">Ready to process raw order CSV.</div>
+          </div>
+
+          <div class="card-grid">
+            <div class="stat"><div class="label">Input Rows</div><div class="value" id="ex_input">0</div></div>
+            <div class="stat"><div class="label">Output Rows</div><div class="value" id="ex_output">0</div></div>
+            <div class="stat"><div class="label">Rows With Matches</div><div class="value" id="ex_match">0</div></div>
+            <div class="stat"><div class="label">Max Player Numbers</div><div class="value" id="ex_max">0</div></div>
+            <div class="stat"><div class="label">Uncertain Rows</div><div class="value" id="ex_uncertain">0</div></div>
+          </div>
+
+          <div class="preview-card">
+            <div class="preview-head">
+              <h4>Extraction Preview</h4>
+              <span>Shows up to the first 1000 rows. Yellow rows need review.</span>
+            </div>
+            <div class="table-wrap" id="extractPreview"></div>
+          </div>
+        </section>
+
+        <section id="matchTab" class="tab">
+          <div class="section">
+            <h3>Packing List Matcher</h3>
+            <p>
+              Upload the cleaned order XLSX/CSV and the packing list workbook. V4 fixes the stage-2 scoring function,
+              improves candidate selection, and reduces false red mismatches.
+            </p>
+
+            <div class="row">
+              <div class="filebox">
+                <label>Cleaned Order File</label>
+                <input type="file" id="cleanOrdersFile" accept=".csv,.xlsx" />
+              </div>
+              <div class="filebox">
+                <label>Packing List Workbook</label>
+                <input type="file" id="packingFile" accept=".xlsx,.xlsm,.xltx,.xltm" />
+              </div>
+            </div>
+
+            <div class="row">
+              <button class="primary" id="matchBtn">Match Packing List</button>
+              <button class="secondary" id="downloadMatchBtn" disabled>Download Final Packing List</button>
+            </div>
+
+            <div id="matchStatus" class="status-bar">Ready to process cleaned order file and packing list.</div>
+          </div>
+
+          <div class="card-grid">
+            <div class="stat"><div class="label">Rows Processed</div><div class="value" id="mt_rows">0</div></div>
+            <div class="stat"><div class="label">OK</div><div class="value" id="mt_ok">0</div></div>
+            <div class="stat"><div class="label">Mismatch</div><div class="value" id="mt_mm">0</div></div>
+            <div class="stat"><div class="label">Player Numbers Pulled</div><div class="value" id="mt_pull">0</div></div>
+            <div class="stat"><div class="label">Packing Qty Total</div><div class="value" id="mt_packqty">0</div></div>
+            <div class="stat"><div class="label">Order Qty Total</div><div class="value" id="mt_orderqty">0</div></div>
+            <div class="stat"><div class="label">Qty Check</div><div class="value" id="mt_qtyok">—</div></div>
+            <div class="stat"><div class="label">Duplicate Material Rows</div><div class="value" id="mt_dup">0</div></div>
+          </div>
+
+          <div class="preview-card">
+            <div class="preview-head">
+              <h4>Matching Preview</h4>
+              <span>Red rows indicate mismatches. Duplicate same-material matches are noted for review.</span>
+            </div>
+            <div class="table-wrap" id="matchPreview"></div>
+          </div>
+        </section>
+
+        <div class="footer-note">
+          V4 fixes: missing candidate confidence function, stronger player last-name extraction, improved single-word name handling, and better stage-2 row selection.
+        </div>
+      </main>
+    </div>
+  </div>
+
+<script>
+let extractedRows = [];
+let matchedWorkbookBlob = null;
+let cachedCleanOrdersRows = null;
+let cachedPackingArrayBuffer = null;
+
+function setText(id, value){ document.getElementById(id).textContent = value; }
+function setStatus(id, text, kind=''){
+  const el = document.getElementById(id);
+  el.className = 'status-bar' + (kind ? ' status-' + kind : '');
+  el.textContent = text;
+}
+function downloadBlob(blob, filename){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function normalizeHeader(v){ return String(v || '').trim().toLowerCase(); }
+function normText(v){ return String(v ?? '').replace(/\s+/g,' ').trim().toUpperCase(); }
+function numericOnly(v){ return /^\d+$/.test(String(v || '').trim()); }
+function qtyNumber(v){
+  const s = String(v ?? '').replace(/,/g,'').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function orderIdFromAny(s){ const m = String(s ?? '').match(/(\d+)/); return m ? m[1] : ''; }
+function normMaterialKey(v){ return String(v ?? '').replace(/\s+/g, ' ').trim().toUpperCase(); }
+function rowValueByHeader(rowObj, names){
+  const keys = Object.keys(rowObj || {});
+  for (const wanted of names){
+    const hit = keys.find(k => normalizeHeader(k) === normalizeHeader(wanted));
+    if (hit) return rowObj[hit];
+  }
+  return '';
+}
+function canonicalPlayerNumber(v){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10));
+  return s.toUpperCase();
+}
+function samePlayerNumber(a,b){
+  const ca = canonicalPlayerNumber(a);
+  const cb = canonicalPlayerNumber(b);
+  return ca !== '' && cb !== '' && ca === cb;
+}
+function getAllValuesByPrefixes(rowObj, prefixes){
+  const out = [];
+  const seen = new Set();
+  const keys = Object.keys(rowObj || {});
+  for (const key of keys){
+    const normalizedKey = normalizeHeader(key);
+    for (const prefix of prefixes){
+      if (normalizedKey.startsWith(normalizeHeader(prefix))){
+        const raw = String(rowObj[key] ?? '').trim();
+        if (!raw) continue;
+        const dedupeKey = raw.toUpperCase();
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        out.push(raw);
+        break;
+      }
+    }
+  }
+  return out;
+}
+function firstUsefulValue(values){
+  for (const v of (values || [])){
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function getCandidateConfidenceScore(cand){
+  let score = 0;
+  if (getAllValuesByPrefixes(cand, ['Player Number']).length) score += 1;
+  if (getAllValuesByPrefixes(cand, ['Player Initial']).length) score += 1;
+  if (getAllValuesByPrefixes(cand, ['Player Name']).length) score += 1;
+  if (getAllValuesByPrefixes(cand, ['Player Name Raw']).length) score += 1;
+  if (String(cand['Extraction Status'] || '').toUpperCase() === 'OK') score += 1;
+  return score;
+}
+
+const HIDDEN_PREVIEW_COLUMNS = new Set([
+  'Player Number Confidence',
+  'Player Initial Confidence',
+  'Player Name Confidence',
+  'Player Number Source',
+  'Player Initial Source',
+  'Player Name Source'
+]);
+
+function visibleColumnsForPreview(rows){
+  if (!rows || !rows.length) return [];
+  return Object.keys(rows[0]).filter(c => !HIDDEN_PREVIEW_COLUMNS.has(String(c || '').trim()));
+}
+
+function renderTable(containerId, rows, mismatchColumn){
+  const root = document.getElementById(containerId);
+  if (!rows || !rows.length){ root.innerHTML = ''; return; }
+  const cols = visibleColumnsForPreview(rows);
+  let html = '<table><thead><tr>' + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+  rows.slice(0,1000).forEach(r=>{
+    const mm = mismatchColumn && String(r[mismatchColumn] || '').toUpperCase() === 'MISMATCH';
+    const exStatus = String(r['Extraction Status'] || '').toUpperCase();
+    const un = exStatus === 'UNCERTAIN';
+    const unpaid = exStatus === 'UNPAID NAME';
+    const rowCls = mm ? 'mismatch' : (unpaid ? 'unpaid' : (un ? 'uncertain' : ''));
+    html += `<tr class="${rowCls}">` + cols.map(c=>{
+      const v = r[c] ?? '';
+      let cls = '';
+      if (String(v).toUpperCase() === 'OK') cls = 'text-ok';
+      if (String(v).toUpperCase() === 'MISMATCH') cls = 'text-bad';
+      if (String(v).toUpperCase() === 'UNCERTAIN') cls = 'text-warn';
+      return `<td class="${cls}">${escapeHtml(v)}</td>`;
+    }).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  root.innerHTML = html;
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+document.getElementById('cleanOrdersFile').addEventListener('change', async (e)=>{
+  const f = e.target.files[0];
+  cachedCleanOrdersRows = null;
+  if (!f) return;
+  try{
+    setStatus('matchStatus', 'Reading cleaned order file into memory...', 'warn');
+    cachedCleanOrdersRows = await readOrderRows(f);
+    setStatus('matchStatus', 'Cleaned order file loaded. Now upload the packing list and click Match.', 'ok');
+  }catch(err){
+    console.error(err);
+    setStatus('matchStatus', 'Could not read cleaned order file: ' + err.message, 'bad');
+  }
+});
+
+document.getElementById('packingFile').addEventListener('change', async (e)=>{
+  const f = e.target.files[0];
+  cachedPackingArrayBuffer = null;
+  if (!f) return;
+  try{
+    setStatus('matchStatus', 'Reading packing list workbook into memory...', 'warn');
+    cachedPackingArrayBuffer = await f.arrayBuffer();
+    setStatus('matchStatus', 'Packing list loaded. Click Match when both files are ready.', 'ok');
+  }catch(err){
+    console.error(err);
+    setStatus('matchStatus', 'Could not read packing list: ' + err.message, 'bad');
+  }
+});
+
+function standardizeYesNo(values){
+  return values.map(v=>{
+    const lv = String(v).trim().toLowerCase();
+    if (lv === 'yes') return 'Yes';
+    if (lv === 'no') return 'No';
+    return String(v).trim();
+  });
+}
+function uniqueClean(values){
+  const seen = new Set();
+  const out = [];
+  for (const raw of values || []){
+    const v = String(raw || '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+    const key = v.toUpperCase();
+    if (!v || seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}
+function cleanupNameValue(v){
+  return String(v || '')
+    .replace(/^[\s:;,\-_=]+/, '')
+    .replace(/[\s:;,\-_=]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function toTitleCaseName(v){
+  const raw = String(v || '').trim();
+  if (!raw) return '';
+  return raw
+    .toLowerCase()
+    .split(/(\s+|-)/)
+    .map(part => {
+      if (!part || /^\s+$/.test(part) || part === '-') return part;
+      return part.split(/(['’])/).map(seg => {
+        if (seg === "'" || seg === '’') return seg;
+        return seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg;
+      }).join('');
+    })
+    .join('');
+}
+function normalizeVariationText(raw){
+  return String(raw || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[–—]/g, '-')
+    .replace(/\r/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([,;|])\s*/g, '$1 ')
+    .trim();
+}
+function splitAdaptiveSegments(raw){
+  const normalized = normalizeVariationText(raw);
+  if (!normalized) return [];
+  return normalized
+    .split(/[,;|\n]+/)
+    .map(s => String(s || '').trim())
+    .filter(Boolean);
+}
+function cleanNameCandidate(candidate){
+  let cleaned = cleanupNameValue(candidate);
+  cleaned = cleaned
+    .replace(/\b(?:Club|Delivery Info|Player ID|Player Number|Number|Qty|Quantity|Size|Color|Region|Warehouse|Ship To|Ship Via|Orders? Will Be Received)\b.*$/i, '')
+    .replace(/^[\s:;,\-_=]+/, '')
+    .replace(/[\s:;,\-_=]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return '';
+  if (/^(yes|no|x|xx|n\/a|na|null)$/i.test(cleaned)) return '';
+  if (!/[A-Za-z]/.test(cleaned)) return '';
+  if (/^\d+$/.test(cleaned)) return '';
+  if (/\b(?:CLUB|DELIVERY INFO|PLAYER ID|ORDERS? WILL BE RECEIVED|PREMIER|UNITED|SC|FC|ACADEMY|REGION|WAREHOUSE|SHIP TO|SHIP VIA)\b/i.test(cleaned)) return '';
+  if (/^(RTHEAST|ORTHEAST|NORTHEAST|SOUTHEAST|SOUTHWEST|NORTHWEST|NORTH|SOUTH|EAST|WEST|MIDWEST|CENTRAL|USA|BD)$/i.test(cleaned)) return '';
+
+  if (!/\s/.test(cleaned)) {
+    if (cleaned.length < 2 || cleaned.length > 15) return '';
+  }
+
+  const wordCount = cleaned.split(/\s+/).filter(Boolean).length;
+  if (wordCount > 3) return '';
+  if (!/^[A-Za-z][A-Za-z'’.\-]*(?:\s+[A-Za-z][A-Za-z'’.\-]*){0,2}$/.test(cleaned)) return '';
+  return toTitleCaseName(cleaned);
+}
+function cleanInferredNameCandidate(candidate){
+  let cleaned = cleanupNameValue(candidate)
+    .replace(/\b(?:Club|Delivery Info|Player ID|Player Number|Number|Qty|Quantity|Size|Color|Region|Warehouse|Ship To|Ship Via|Orders? Will Be Received)\b.*$/i, '')
+    .replace(/^[\s:;,\-_=#]+/, '')
+    .replace(/[\s:;,\-_=#]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return '';
+  if (/^(yes|no|x|xx|n\/a|na|null)$/i.test(cleaned)) return '';
+  if (!/[A-Za-z]/.test(cleaned)) return '';
+  if (/^\d+$/.test(cleaned)) return '';
+  if (/\b(?:CLUB|DELIVERY INFO|PLAYER ID|ORDERS? WILL BE RECEIVED|PREMIER|UNITED|SC|FC|ACADEMY|REGION|WAREHOUSE|SHIP TO|SHIP VIA|ORDERS?|MATERIAL|COLOR|SIZE)\b/i.test(cleaned)) return '';
+  if (/^(RTHEAST|ORTHEAST|NORTHEAST|SOUTHEAST|SOUTHWEST|NORTHWEST|NORTH|SOUTH|EAST|WEST|MIDWEST|CENTRAL|USA|BD)$/i.test(cleaned)) return '';
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 2) return '';
+  if (!words.every(w => /^[A-Za-z][A-Za-z'’.\-]*$/.test(w))) return '';
+  if (words.length === 1){
+    const w = words[0];
+    if (w.length < 2 || w.length > 15) return '';
+  }
+  return toTitleCaseName(cleaned);
+}
+function isLikelyNameContext(type){
+  return ['player_number','player_initial','player_name','player_id','customization_flag_number','customization_flag_name'].includes(String(type || ''));
+}
+function inferNameCandidatesFromContext(segments){
+  const out = [];
+  for (let i = 0; i < (segments || []).length; i++){
+    const seg = segments[i] || {};
+    if (seg.type !== 'noise' && seg.type !== 'size') continue;
+    const prev = segments[i - 1] || {};
+    const next = segments[i + 1] || {};
+    if (!isLikelyNameContext(prev.type) && !isLikelyNameContext(next.type)) continue;
+    const inferred = cleanInferredNameCandidate(seg.text || '');
+    if (!inferred) continue;
+    out.push(makeCandidate('name', inferred, 0.88, seg.text, 'inferred_player_name', 'inferred unlabeled name near player context'));
+  }
+  return out;
+}
+function classifySegment(segment){
+  const s = String(segment || '').trim();
+
+  if (/^CLUB\s*[:=-]/i.test(s)) return 'club';
+  if (/^(DELIVERY INFO|ORDERS?\s+WILL\s+BE\s+RECEIVED)\s*[:=-]?/i.test(s)) return 'delivery';
+  if (/^(REGION|WAREHOUSE|SHIP TO|SHIP VIA)\s*[:=-]/i.test(s)) return 'logistics';
+  if (/^ADD\s*\$?\s*\d+(?:\.\d+)?\s*\$?\s*(?:TO\s*HAVE|FOR)\s*PLAYER[\s_-]*(NUMBER|INITIALS|INITIAL)\s*[:=-]?\s*(YES|NO)\b/i.test(s)) return 'customization_flag_number';
+  if (/^ADD\s*\$?\s*\d+(?:\.\d+)?\s*\$?\s*(?:TO\s*HAVE|FOR)\s*(?:PLAYER[\s_-]*)?(NAME|LAST[\s_-]*NAME|LASTNAME)\s*[:=-]?\s*(YES|NO)\b/i.test(s)) return 'customization_flag_name';
+  if (/^PLAYER[\s_-]*(NUMBER|NO|#|NUM(?:BER)?)\s*[:=-]?/i.test(s)) return 'player_number';
+  if (/^PLAYER[\s_-]*ID\s*[:=-]?/i.test(s)) return 'player_id';
+  if (/^(?:PLAYER[\s_-]*)?(INITIALS|INITIAL|INITAILS|INITALS)\s*[:=-]?/i.test(s)) return 'player_initial';
+  if (/^(?:PLAYER[\s_-]*)?(NAME|LAST[\s_-]*NAME|LASTNAME|LAST-NAME)\s*[:=-]?/i.test(s) || /^PLAYER(NAME|LASTNAME)\s*[:=-]?/i.test(s)) return 'player_name';
+  if (/\b(?:WXS|WS|WM|WL|WXL|AXS|AM|AL|AXL|A2XL|A3XL|A4XL|YXS|YS|YM|YL|YXL|NOSZ)\b/i.test(s)) return 'size';
+  if (!/[A-Za-z]/.test(s)) return 'noise';
+  return 'noise';
+}
+function makeCandidate(field, value, confidence, source, segmentType, reason){
+  return {
+    field,
+    value: String(value || '').trim(),
+    confidence: Number(confidence || 0),
+    source: String(source || '').trim(),
+    segmentType: String(segmentType || '').trim(),
+    reason: String(reason || '').trim()
+  };
+}
+function extractAdaptiveCandidates(segment, segmentType){
+  const s = String(segment || '').trim();
+  const candidates = [];
+  let m;
+
+  if (segmentType === 'player_number'){
+    m = s.match(/^PLAYER[\s_-]*(?:NUMBER|NO|#|NUM(?:BER)?)\s*[:=-]?\s*([0-9A-Za-z]+)/i);
+    if (m){
+      const val = cleanupNameValue(m[1] || '');
+      if (val && !/^(YES|NO)$/i.test(val)) candidates.push(makeCandidate('number', val, 0.99, s, segmentType, 'explicit player number label'));
+    }
+  }
+
+  if (segmentType === 'player_id'){
+    m = s.match(/^PLAYER[\s_-]*ID\s*[:=-]?\s*([0-9A-Za-z!Xx]+)/i);
+    if (m){
+      const val = cleanupNameValue(m[1] || '');
+      if (val) candidates.push(makeCandidate('id', val, 0.98, s, segmentType, 'explicit player id label'));
+    }
+  }
+
+  if (segmentType === 'player_initial'){
+    m = s.match(/^(?:PLAYER[\s_-]*)?(?:INITIALS|INITIAL|INITAILS|INITALS)\s*[:=-]?\s*([^,;|\n]+)/i);
+    if (m){
+      const val = cleanupNameValue(m[1] || '').replace(/[^A-Za-z\/& -]/g, '').replace(/\s+/g, ' ').trim();
+      if (val && !/^(YES|X|XX)$/i.test(val)) candidates.push(makeCandidate('initial', val, 0.97, s, segmentType, 'explicit player initial label'));
+    }
+  }
+
+  if (segmentType === 'player_name'){
+    m = s.match(/^(?:PLAYER[\s_-]*)?(?:NAME|LAST[\s_-]*NAME|LASTNAME|LAST-NAME)\s*[:=-]?\s*(.+)$/i) || s.match(/^PLAYER(?:NAME|LASTNAME)\s*[:=-]?\s*(.+)$/i);
+    if (m){
+      const val = cleanNameCandidate(m[1] || '');
+      if (val) candidates.push(makeCandidate('name', val, 0.97, s, segmentType, 'explicit player name label'));
+    }
+  }
+
+  if (segmentType === 'customization_flag_number'){
+    m = s.match(/\b(YES|NO)\b/i);
+    if (m) candidates.push(makeCandidate('number_requirement', /^yes$/i.test(m[1]) ? 'Yes' : 'No', 0.99, s, segmentType, 'player number customization flag'));
+  }
+
+  if (segmentType === 'customization_flag_name'){
+    m = s.match(/\b(YES|NO)\b/i);
+    if (m) candidates.push(makeCandidate('name_requirement', /^yes$/i.test(m[1]) ? 'Yes' : 'No', 0.99, s, segmentType, 'player name customization flag'));
+  }
+
+  return candidates;
+}
+function dedupeCandidates(candidates){
+  const seen = new Set();
+  const out = [];
+  for (const c of (candidates || [])){
+    const key = [c.field, String(c.value || '').toUpperCase(), c.segmentType].join('||');
+    if (!c.value || seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  return out;
+}
+function resolveAdaptiveExtraction(rawText){
+  const segments = splitAdaptiveSegments(rawText).map(seg => ({ text: seg, type: classifySegment(seg) }));
+  let candidates = [];
+  segments.forEach(seg => {
+    candidates.push(...extractAdaptiveCandidates(seg.text, seg.type));
+  });
+  candidates.push(...inferNameCandidatesFromContext(segments));
+  candidates = dedupeCandidates(candidates);
+
+  let numbers = candidates.filter(c => c.field === 'number').sort((a,b)=>b.confidence-a.confidence);
+  const ids = candidates.filter(c => c.field === 'id').sort((a,b)=>b.confidence-a.confidence);
+  const initials = candidates.filter(c => c.field === 'initial').sort((a,b)=>b.confidence-a.confidence);
+  const names = candidates.filter(c => c.field === 'name').sort((a,b)=>b.confidence-a.confidence);
+  const numberReqs = standardizeYesNo(uniqueClean(candidates.filter(c => c.field === 'number_requirement').map(c => c.value)));
+  const nameReqs = standardizeYesNo(uniqueClean(candidates.filter(c => c.field === 'name_requirement').map(c => c.value)));
+
+  const suppression = [];
+  if (String(numberReqs[0] || '').toUpperCase() === 'NO'){
+    if (numbers.length) suppression.push('Player number suppressed because customization flag is No');
+    numbers = [];
+  }
+
+  const numberValues = uniqueClean(numbers.map(c => cleanupNameValue(c.value)));
+  const idValues = uniqueClean(ids.map(c => cleanupNameValue(c.value)));
+  const initialValues = uniqueClean(initials.map(c => cleanupNameValue(c.value)));
+  const nameValues = uniqueClean(names.map(c => cleanNameCandidate(c.value)).filter(Boolean));
+
+  const confidence = {
+    number: numberValues.length ? Math.max(...numbers.map(c => c.confidence), 0) : 0,
+    initial: initialValues.length ? Math.max(...initials.map(c => c.confidence), 0) : 0,
+    name: nameValues.length ? Math.max(...names.map(c => c.confidence), 0) : 0
+  };
+
+  const sources = {
+    number: numberValues.length ? numbers.map(c => c.source).join(' | ') : '',
+    initial: initialValues.length ? initials.map(c => c.source).join(' | ') : '',
+    name: nameValues.length ? names.map(c => c.source).join(' | ') : ''
+  };
+
+  return {
+    segments,
+    candidates,
+    nums: numberValues,
+    ids: idValues,
+    initials: initialValues,
+    names: nameValues,
+    requirements: numberReqs,
+    nameRequirements: nameReqs,
+    confidence,
+    sources,
+    suppression
+  };
+}
+function buildExtractionAssessment(txt, smart){
+  const notes = [];
+  const rawText = String(txt || '');
+  const hasPlayerWord = /player/i.test(rawText);
+  let status = 'OK';
+  const req = String((smart.nameRequirements || [])[0] || '').trim().toUpperCase();
+
+  if ((smart.suppression || []).length){
+    notes.push(...smart.suppression);
+    if (status === 'OK') status = 'SUPPRESSED_BY_RULE';
+  }
+  if (hasPlayerWord && !smart.nums.length && !smart.initials.length && !smart.names.length && !smart.ids.length){
+    notes.push('Player text found but no structured player value extracted');
+    if (status === 'OK') status = 'UNCERTAIN';
+  }
+  if (hasPlayerWord && smart.names.length && !smart.nums.length && String((smart.requirements || [])[0] || '').toUpperCase() !== 'NO'){
+    notes.push('Player name found but player number missing');
+    if (status === 'OK') status = 'UNCERTAIN';
+  }
+  if (hasPlayerWord && smart.initials.length && !smart.names.length && !smart.nums.length){
+    notes.push('Only initials found; verify player details');
+    if (status === 'OK') status = 'UNCERTAIN';
+  }
+  if (smart.names.length && req === 'NO'){
+    notes.push('Name found but customization charge marked No');
+    status = 'UNPAID NAME';
+  } else if (smart.names.length && !req){
+    notes.push('Name found but name charge flag missing');
+    if (status === 'OK') status = 'UNCERTAIN';
+  }
+
+  const segmentSummary = uniqueClean((smart.segments || []).map(s => s.type)).join(', ');
+  if (segmentSummary) notes.push('Segment types: ' + segmentSummary);
+
+  return { status, note: uniqueClean(notes).join('; ') };
+}
+function buildExtractorOutput(inputObjects){
+  const first = inputObjects[0] || {};
+  const keys = Object.keys(first);
+  const variationKey = keys.find(k=>normalizeHeader(k)==='product variation details');
+  if (!variationKey) throw new Error("Required column 'Product Variation Details' was not found.");
+
+  const orderKey = keys.find(k=>normalizeHeader(k)==='order id');
+  const qtyKey = keys.find(k=>normalizeHeader(k)==='product qty');
+  const skuKey = keys.find(k=>normalizeHeader(k)==='product sku');
+  const nameKey = keys.find(k=>normalizeHeader(k)==='product name');
+  const materialKey = keys.find(k=>['material','material number','materialnumber'].includes(normalizeHeader(k)));
+
+  let maxNums=1, maxInitials=1, maxNames=1, matchedRows=0;
+
+  const staged = inputObjects.map((row, i)=>{
+    const txt = String(row[variationKey] || '').trim();
+    const smart = resolveAdaptiveExtraction(txt);
+    const hasMatch = [smart.nums, smart.ids, smart.initials, smart.names, smart.requirements].some(a=>a.length);
+    if (hasMatch) matchedRows++;
+    maxNums = Math.max(maxNums, smart.nums.length || 1);
+    maxInitials = Math.max(maxInitials, smart.initials.length || 1);
+    maxNames = Math.max(maxNames, smart.names.length || 1);
+
+    const assess = buildExtractionAssessment(txt, smart);
+
+    return {
+      'Source Row': String(i+2),
+      'Order ID': orderKey ? String(row[orderKey] || '').trim() : '',
+      'Product Qty': qtyKey ? String(row[qtyKey] || '').trim() : '',
+      'Product SKU': skuKey ? String(row[skuKey] || '').trim() : '',
+      'Material': materialKey ? String(row[materialKey] || '').trim() : '',
+      'Product Name': nameKey ? String(row[nameKey] || '').trim() : '',
+      'Original Product Variation Details': txt,
+      '_nums': smart.nums,
+      '_initials': smart.initials,
+      '_names': smart.names,
+      '_extract_status': assess.status,
+      '_extract_note': assess.note,
+      '_num_conf': smart.confidence.number,
+      '_init_conf': smart.confidence.initial,
+      '_name_conf': smart.confidence.name,
+      '_num_source': smart.sources.number,
+      '_init_source': smart.sources.initial,
+      '_name_source': smart.sources.name,
+      'Notes': !txt ? 'Blank Product Variation Details' : (hasMatch ? 'Adaptive match found' : 'No target value found')
+    };
+  });
+
+  const output = staged.map(r=>{
+    const out = {
+      'Source Row': r['Source Row'],
+      'Order ID': r['Order ID'],
+      'Product Qty': r['Product Qty'],
+      'Product SKU': r['Product SKU'],
+      'Material': r['Material'],
+      'Product Name': r['Product Name'],
+      'Original Product Variation Details': r['Original Product Variation Details']
+    };
+    for (let i=0;i<maxNums;i++) out[`Player Number ${i+1}`] = r._nums[i] || '';
+    for (let i=0;i<maxInitials;i++) out[`Player Initial ${i+1}`] = r._initials[i] || '';
+    out['Player Name Raw 1'] = r._names[0] || '';
+    for (let i=0;i<maxNames;i++) out[`Player Name ${i+1}`] = r._names[i] || '';
+    out['Player Number Confidence'] = r._num_conf || '';
+    out['Player Initial Confidence'] = r._init_conf || '';
+    out['Player Name Confidence'] = r._name_conf || '';
+    out['Player Number Source'] = r._num_source || '';
+    out['Player Initial Source'] = r._init_source || '';
+    out['Player Name Source'] = r._name_source || '';
+    out['Extraction Status'] = r._extract_status || 'OK';
+    out['Extraction Review Note'] = r._extract_note || '';
+    out['Notes'] = r['Notes'];
+    return out;
+  });
+
+  return {
+    output,
+    stats:{
+      input_rows: inputObjects.length,
+      output_rows: output.length,
+      matched_rows: matchedRows,
+      max_player_numbers: maxNums,
+    }
+  };
+}
+
+async function readCsvRows(file){
+  return new Promise((resolve, reject)=>{
+    Papa.parse(file, {
+      header:true,
+      skipEmptyLines:true,
+      complete:r=>resolve(r.data),
+      error:e=>reject(e)
+    });
+  });
+}
+async function loadWorkbook(input){
+  const buf = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  return wb;
+}
+async function readOrderRows(file){
+  const name = String(file?.name || '').toLowerCase();
+  if (name.endsWith('.xlsx') || name.endsWith('.xlsm') || name.endsWith('.xltx') || name.endsWith('.xltm')){
+    const wb = await loadWorkbook(file);
+    const ws = wb.worksheets[0];
+    const headerRow = ws.getRow(1);
+    const headers = [];
+    headerRow.eachCell((cell, colNum)=>{ headers[colNum] = String(cell.value ?? '').trim(); });
+    const rows = [];
+    for (let r = 2; r <= ws.rowCount; r++){
+      const row = ws.getRow(r);
+      const obj = {};
+      let hasData = false;
+      headers.forEach((h, c)=>{
+        if (!h || !c) return;
+        const cell = row.getCell(c);
+        let val = cell.text ?? cell.value ?? '';
+        if (typeof val === 'object' && val && val.richText) val = val.richText.map(x=>x.text).join('');
+        val = String(val ?? '').trim();
+        if (val !== '') hasData = true;
+        obj[h] = val;
+      });
+      if (hasData) rows.push(obj);
+    }
+    return rows;
+  }
+  return await readCsvRows(file);
+}
+function mapHeaders(ws){
+  const out = {};
+  ws.getRow(1).eachCell((cell, colNum)=>{ out[String(cell.value || '').trim()] = colNum; });
+  return out;
+}
+function getRowValue(row, idx){ return idx ? String(row.getCell(idx).value ?? '').trim() : ''; }
+function packingNameMatches(packValue, orderInitial, orderName){
+  const pv = normText(packValue);
+  if (['', 'X', 'XX'].includes(pv)) return !String(orderInitial||'').trim() && !String(orderName||'').trim();
+
+  const candidates = new Set();
+  const addCand = (v) => {
+    const s = normText(v);
+    if (!s) return;
+    candidates.add(s);
+    const tokens = s.split(/\s+/).filter(Boolean);
+    tokens.forEach(t => candidates.add(t));
+    if (tokens.length >= 2) {
+      candidates.add(tokens[tokens.length - 1]);
+      candidates.add(tokens[0]);
+    }
+  };
+
+  addCand(orderInitial);
+  addCand(orderName);
+
+  if (candidates.has(pv)) return true;
+  for (const c of candidates){
+    if (c && (c.includes(pv) || pv.includes(c))) return true;
+  }
+  return false;
+}
+function cleanCsvValue(v){ return String(v ?? '').replace(/\u00A0/g, ' ').trim(); }
+function csvTextValueForExcel(v){
+  const s = cleanCsvValue(v);
+  return s ? `="${s.replace(/"/g, '""')}"` : '';
+}
+function isPlayerNumberColumn(key){
+  const k = String(key || '').trim().toLowerCase();
+  return /^player number\s+\d+$/.test(k);
+}
+
+function scoreStage2Candidate(cand, packPlayer, packName, packQty){
+  let score = 100;
+  const ordPlayerList = getAllValuesByPrefixes(cand, ['Player Number']);
+  const ordInitList = getAllValuesByPrefixes(cand, ['Player Initial']);
+  const ordNameList = getAllValuesByPrefixes(cand, ['Player Name', 'Player Name Raw', 'Player Last Name', 'Last Name']);
+  const ordQty = qtyNumber(cand.__qty);
+
+  if (ordPlayerList.some(v => samePlayerNumber(packPlayer, v))) score += 60;
+  else if ((!packPlayer || ['X','XX','YES','NO'].includes(normText(packPlayer))) && !ordPlayerList.length) score += 8;
+  else if (numericOnly(packPlayer) && ordPlayerList.length) score -= 15;
+
+  let nameMatched = false;
+  for (const initVal of ordInitList){
+    if (packingNameMatches(packName, initVal, '')) { nameMatched = true; break; }
+  }
+  if (!nameMatched){
+    for (const nameVal of ordNameList){
+      if (packingNameMatches(packName, '', nameVal)) { nameMatched = true; break; }
+    }
+  }
+  if (!nameMatched && ordInitList.length && ordNameList.length){
+    for (const initVal of ordInitList){
+      for (const nameVal of ordNameList){
+        if (packingNameMatches(packName, initVal, nameVal)) { nameMatched = true; break; }
+      }
+      if (nameMatched) break;
+    }
+  }
+  if (nameMatched) score += 25;
+  else if (!['','X','XX'].includes(normText(packName)) && (ordInitList.length || ordNameList.length)) score -= 12;
+
+  if (packQty === ordQty) score += 10;
+  else score -= 8;
+
+  const confidence = getCandidateConfidenceScore(cand);
+  score += Math.min(12, confidence * 3);
+
+  return {
+    score,
+    ordPlayerList,
+    ordInitList,
+    ordNameList
+  };
+}
+
+document.getElementById('extractBtn').addEventListener('click', async ()=>{
+  const rawFile = document.getElementById('rawOrdersFile').files[0];
+  if (!rawFile) { alert('Please choose the raw order CSV file first.'); return; }
+
+  try{
+    setStatus('extractStatus', 'Processing raw order CSV...', 'warn');
+    const rawRows = await readCsvRows(rawFile);
+    const {output, stats} = buildExtractorOutput(rawRows);
+    extractedRows = output;
+    document.getElementById('downloadExtractBtn').disabled = false;
+
+    setText('ex_input', stats.input_rows);
+    setText('ex_output', stats.output_rows);
+    setText('ex_match', stats.matched_rows);
+    setText('ex_max', stats.max_player_numbers);
+    setText('ex_uncertain', output.filter(r => String(r['Extraction Status'] || '').toUpperCase() === 'UNCERTAIN').length);
+
+    renderTable('extractPreview', output);
+    setStatus('extractStatus', 'Extraction completed. The cleaned CSV file is ready to download.', 'ok');
+  } catch(err){
+    console.error(err);
+    setStatus('extractStatus', err.message, 'bad');
+  }
+});
+
+document.getElementById('downloadExtractBtn').addEventListener('click', ()=>{
+  if (!extractedRows || !extractedRows.length) return;
+  const cleanedRows = extractedRows.map(row => {
+    const out = {};
+    Object.keys(row).forEach(key => {
+      const trimmedKey = String(key).trim();
+      if (HIDDEN_PREVIEW_COLUMNS.has(trimmedKey)) return;
+      out[trimmedKey] = isPlayerNumberColumn(trimmedKey)
+        ? csvTextValueForExcel(row[key])
+        : cleanCsvValue(row[key]);
+    });
+    return out;
+  });
+  const csv = Papa.unparse(cleanedRows, { quotes: false, skipEmptyLines: true });
+  const blob = new Blob(["\ufeff" + csv], {type:'text/csv;charset=utf-8;'});
+  const base = (document.getElementById('rawOrdersFile').files[0]?.name || 'orders').replace(/\.[^.]+$/, '');
+  downloadBlob(blob, `${base}_extracted.csv`);
+});
+
+document.getElementById('matchBtn').addEventListener('click', async ()=>{
+  const orderFile = document.getElementById('cleanOrdersFile').files[0];
+  const packingFile = document.getElementById('packingFile').files[0];
+
+  if (!orderFile || !packingFile){
+    alert('Please upload the cleaned order file and the packing list workbook.');
+    return;
+  }
+  if (!cachedCleanOrdersRows || !cachedPackingArrayBuffer){
+    alert('Please wait until both files are fully loaded, then click Match again.');
+    return;
+  }
+
+  try{
+    setStatus('matchStatus', 'Loading files and matching rows...', 'warn');
+
+    const orders = cachedCleanOrdersRows;
+    const wb = await loadWorkbook(cachedPackingArrayBuffer.slice(0));
+    const ws = wb.worksheets[0];
+    const hdr = mapHeaders(ws);
+
+    const required = ['BC Order #','Material','Last Name / Initials','Player #','Order Quantity (Item)'];
+    const missing = required.filter(h => !hdr[h]);
+    if (missing.length) throw new Error('Packing list is missing required columns: ' + missing.join(', '));
+
+    const desiredCols = ['Player Number to check','Player Initial from Order','Player Name from Order','Match Score','Mismatch Status','Mismatch Notes'];
+    let lastCol = ws.columnCount;
+    for (const col of desiredCols){
+      if (!hdr[col]){
+        lastCol += 1;
+        ws.getRow(1).getCell(lastCol).value = col;
+        hdr[col] = lastCol;
+      }
+    }
+
+    const orderPool = {};
+    const orderPoolCounts = {};
+    let totalOrderQty = 0;
+    for (const r of orders){
+      const oid = orderIdFromAny(rowValueByHeader(r, ['Order ID']));
+      const orderMaterial = rowValueByHeader(r, ['Material','Material ','Material Number','MaterialNumber']);
+      const materialKey = normMaterialKey(orderMaterial || rowValueByHeader(r, ['Product SKU']) || '');
+      if (!oid || !materialKey) continue;
+      const comboKey = oid + '||' + materialKey;
+      const item = {...r};
+      item.__order_id = oid;
+      item.__material_key = materialKey;
+      item.__qty = qtyNumber(rowValueByHeader(r, ['Product Qty','Qty','Quantity']) || 0);
+      totalOrderQty += item.__qty;
+      if (!orderPool[comboKey]) orderPool[comboKey] = [];
+      orderPool[comboKey].push(item);
+      orderPoolCounts[comboKey] = (orderPoolCounts[comboKey] || 0) + 1;
+    }
+
+    let rowsProcessed = 0;
+    let ok = 0;
+    let mismatch = 0;
+    let playerPulled = 0;
+    let totalPackingQty = 0;
+    let duplicateMaterialRows = 0;
+    const preview = [];
+
+    for (let rowNum = 2; rowNum <= ws.rowCount; rowNum++){
+      const row = ws.getRow(rowNum);
+      const bc = getRowValue(row, hdr['BC Order #']);
+      const material = getRowValue(row, hdr['Material']);
+      const oid = orderIdFromAny(bc);
+      if (!oid || !material || normText(bc).includes('TOTAL')) continue;
+
+      rowsProcessed += 1;
+      const packQty = qtyNumber(getRowValue(row, hdr['Order Quantity (Item)']));
+      totalPackingQty += packQty;
+
+      const materialKey = normMaterialKey(material);
+      const comboKey = oid + '||' + materialKey;
+      const candidates = orderPool[comboKey] || [];
+      const notes = [];
+      const reviewNotes = [];
+      const isDuplicateMaterialCombo = (orderPoolCounts[comboKey] || 0) >= 2;
+      if (isDuplicateMaterialCombo) duplicateMaterialRows += 1;
+      let status = 'Mismatch';
+      let bestScoreOut = '';
+      let bestNumList = [];
+      let bestInitList = [];
+      let bestNameList = [];
+
+      if (!candidates.length){
+        notes.push('Order ID + Material not found in cleaned order file');
+      } else {
+        const packPlayer = getRowValue(row, hdr['Player #']);
+        const packName = getRowValue(row, hdr['Last Name / Initials']);
+
+        let bestI = -1;
+        let bestScore = -1;
+        let bestMeta = null;
+
+        candidates.forEach((cand, i)=>{
+          const meta = scoreStage2Candidate(cand, packPlayer, packName, packQty);
+          if (meta.score > bestScore){
+            bestScore = meta.score;
+            bestI = i;
+            bestMeta = meta;
+          }
+        });
+
+        if (bestI < 0){
+          notes.push('Order ID + Material matched, but player line could not be resolved');
+        } else {
+          const chosen = candidates.splice(bestI, 1)[0];
+          bestScoreOut = bestScore;
+
+          const ordNumList = bestMeta?.ordPlayerList || getAllValuesByPrefixes(chosen, ['Player Number']);
+          const ordInitList = bestMeta?.ordInitList || getAllValuesByPrefixes(chosen, ['Player Initial']);
+          const ordNameList = bestMeta?.ordNameList || getAllValuesByPrefixes(chosen, ['Player Name', 'Player Name Raw', 'Player Last Name', 'Last Name']);
+          bestNumList = ordNumList;
+          bestInitList = ordInitList;
+          bestNameList = ordNameList;
+
+          const ordNum = firstUsefulValue(ordNumList);
+          const ordQty = qtyNumber(chosen.__qty);
+
+          if (ordNum) playerPulled++;
+          if (packQty !== ordQty) notes.push('Quantity mismatch');
+
+          if (ordNum){
+            const numberMatched = ordNumList.some(v => samePlayerNumber(packPlayer, v));
+            if (ordNumList.some(v => !numericOnly(v))) notes.push('Order player number contains non-numeric characters');
+            if (!numericOnly(packPlayer)) notes.push('Packing Player # is not numeric while order has player number');
+            else if (!numberMatched) notes.push('Player number mismatch');
+          } else {
+            if (numericOnly(packPlayer)) notes.push('Packing has player number but order file is blank');
+          }
+
+          if (isDuplicateMaterialCombo){
+            reviewNotes.push('Duplicate material under same order - matched from remaining player candidates');
+          }
+
+          if (ordInitList.length || ordNameList.length){
+            let exactNameMatch = false;
+            for (const initVal of (ordInitList.length ? ordInitList : [''])){
+              for (const nameVal of (ordNameList.length ? ordNameList : [''])){
+                if (packingNameMatches(packName, initVal, nameVal)){
+                  exactNameMatch = true;
+                  break;
+                }
+              }
+              if (exactNameMatch) break;
+            }
+            if (!exactNameMatch){
+              notes.push('Last Name / Initials does not match order initial or last name');
+            }
+          } else {
+            if (!['','X','XX'].includes(normText(packName))){
+              notes.push('Packing has Last Name / Initials but order file is blank');
+            }
+          }
+
+          status = notes.length ? 'Mismatch' : 'OK';
+        }
+      }
+
+      row.getCell(hdr['Player Number to check']).value = bestNumList.join(' | ');
+      row.getCell(hdr['Player Initial from Order']).value = bestInitList.join(' | ');
+      row.getCell(hdr['Player Name from Order']).value = bestNameList.join(' | ');
+      row.getCell(hdr['Match Score']).value = bestScoreOut;
+      row.getCell(hdr['Mismatch Status']).value = status;
+      const allNotes = notes.concat(reviewNotes);
+      row.getCell(hdr['Mismatch Notes']).value = allNotes.join('; ');
+
+      if (status === 'Mismatch'){
+        const redFill = {type:'pattern', pattern:'solid', fgColor:{argb:'FFFEE2E2'}};
+        const darkRedFont = {color:{argb:'FF991B1B'}, bold:true};
+        desiredCols.forEach(col=>{ row.getCell(hdr[col]).fill = redFill; });
+        row.getCell(hdr['Mismatch Status']).font = darkRedFont;
+        mismatch += 1;
+      } else {
+        ok += 1;
+      }
+
+      preview.push({
+        'BC Order #': bc,
+        'Material': material,
+        'Packing Qty': packQty,
+        'Last Name / Initials': getRowValue(row, hdr['Last Name / Initials']),
+        'Player #': getRowValue(row, hdr['Player #']),
+        'Player Number to check': bestNumList.join(' | '),
+        'Player Initial from Order': bestInitList.join(' | '),
+        'Player Name from Order': bestNameList.join(' | '),
+        'Match Score': bestScoreOut,
+        'Mismatch Status': status,
+        'Mismatch Notes': allNotes.join('; ')
+      });
+    }
+
+    ws.getColumn(hdr['Player Number to check']).width = 20;
+    ws.getColumn(hdr['Player Initial from Order']).width = 22;
+    ws.getColumn(hdr['Player Name from Order']).width = 24;
+    ws.getColumn(hdr['Match Score']).width = 14;
+    ws.getColumn(hdr['Mismatch Status']).width = 16;
+    ws.getColumn(hdr['Mismatch Notes']).width = 60;
+
+    const buffer = await wb.xlsx.writeBuffer();
+    matchedWorkbookBlob = new Blob([buffer], {
+      type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    document.getElementById('downloadMatchBtn').disabled = false;
+    setText('mt_rows', rowsProcessed);
+    setText('mt_ok', ok);
+    setText('mt_mm', mismatch);
+    setText('mt_pull', playerPulled);
+    setText('mt_packqty', totalPackingQty);
+    setText('mt_orderqty', totalOrderQty);
+    const qtyOk = totalPackingQty === totalOrderQty;
+    setText('mt_qtyok', qtyOk ? 'GREEN' : 'RED');
+    setText('mt_dup', duplicateMaterialRows);
+    const qtyMsg = qtyOk ? ' Total quantities match.' : ' Total quantities do not match.';
+    renderTable('matchPreview', preview, 'Mismatch Status');
+    setStatus('matchStatus', 'Matching completed. Final packing list workbook is ready to download.' + qtyMsg, qtyOk ? 'ok' : 'warn');
+  } catch(err){
+    console.error(err);
+    setStatus('matchStatus', err.message, 'bad');
+  }
+});
+
+document.getElementById('downloadMatchBtn').addEventListener('click', ()=>{
+  if (!matchedWorkbookBlob) return;
+  downloadBlob(matchedWorkbookBlob, 'packing list.xlsx');
+});
+</script>
+</body>
+</html>

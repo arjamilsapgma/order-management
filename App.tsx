@@ -8,6 +8,8 @@ import { EditOrder } from './pages/EditOrder';
 import { ClubOrder } from './pages/ClubOrder';
 import { Shipment } from './pages/Shipment';
 import { UserProfile } from './pages/UserProfile';
+import { ClubOrderFileDetail } from './pages/ClubOrderFileDetail';
+import { ShipmentDetail } from './pages/ShipmentDetail';
 import { AppRoute } from './types';
 
 const PlaceholderPage: React.FC<{ title: string; subtitle: string }> = ({ title, subtitle }) => (
@@ -26,12 +28,29 @@ const PlaceholderPage: React.FC<{ title: string; subtitle: string }> = ({ title,
   </div>
 );
 
+const getInitialRoute = (): AppRoute => {
+  const hash = window.location.hash.replace('#', '');
+  const validRoutes = Object.values(AppRoute) as string[];
+  if (hash && validRoutes.includes(hash)) {
+    return hash as AppRoute;
+  }
+  return AppRoute.RECONCILIATION;
+};
+
 const App: React.FC = () => {
   const { user, userProfile, loading, logout, authError } = useAuth();
-  const [currentRoute, setCurrentRoute] = useState<AppRoute>(AppRoute.RECONCILIATION);
+  const [currentRoute, setCurrentRouteState] = useState<AppRoute>(getInitialRoute);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [selectedClubFile, setSelectedClubFile] = useState<{clubOrderId: string, fileName: string} | null>(null);
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  // Wrap setCurrentRoute to also update the URL hash
+  const setCurrentRoute = (route: AppRoute) => {
+    setCurrentRouteState(route);
+    window.location.hash = route;
+  };
 
   useEffect(() => {
     if (user) {
@@ -267,13 +286,15 @@ const App: React.FC = () => {
         <div className="animate-fade-in-up h-full">
             {currentRoute === AppRoute.RECONCILIATION && <Reconciliation onEdit={handleEditOrder} />}
             {currentRoute === AppRoute.EDIT_ORDER && editingOrderId && <EditOrder orderId={editingOrderId} onBack={handleBackToReconciliation} />}
-            {currentRoute === AppRoute.CLUB_ORDER && <ClubOrder />}
-            {currentRoute === AppRoute.SHIPMENT && <Shipment />}
+            {currentRoute === AppRoute.CLUB_ORDER && <ClubOrder onViewFile={(clubOrderId, fileName) => { setSelectedClubFile({clubOrderId, fileName}); setCurrentRoute(AppRoute.CLUB_ORDER_FILE_DETAIL); }} />}
+            {currentRoute === AppRoute.CLUB_ORDER_FILE_DETAIL && selectedClubFile && <ClubOrderFileDetail clubOrderId={selectedClubFile.clubOrderId} fileName={selectedClubFile.fileName} onBack={() => setCurrentRoute(AppRoute.CLUB_ORDER)} />}
+            {currentRoute === AppRoute.SHIPMENT && <Shipment onViewShipment={(id) => { setSelectedShipmentId(id); setCurrentRoute(AppRoute.SHIPMENT_DETAIL); }} />}
+            {currentRoute === AppRoute.SHIPMENT_DETAIL && selectedShipmentId && <ShipmentDetail shipmentId={selectedShipmentId} onBack={() => setCurrentRoute(AppRoute.SHIPMENT)} />}
             {currentRoute === AppRoute.GOOD_RECEIVE && <PlaceholderPage title="Goods Received" subtitle="Track incoming inventory, verify shipments, and update stock levels." />}
             {currentRoute === AppRoute.ORDER_CLOSING && <PlaceholderPage title="Order Closing" subtitle="Finalize transactions, generate invoices, and archive completed orders." />}
             {currentRoute === AppRoute.EXTRACTOR && (
                 <div className="w-full h-[85vh] bg-white rounded-xl shadow-soft overflow-hidden border border-slate-100">
-                    <iframe src="/extractor.html" className="w-full h-full border-none" title="Extractor"></iframe>
+                    <iframe src="/extrator/index.html" className="w-full h-full border-none" title="Extractor"></iframe>
                 </div>
             )}
             {currentRoute === AppRoute.USERS && <UserManagement />}

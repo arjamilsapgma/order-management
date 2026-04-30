@@ -37,7 +37,9 @@ export enum AppRoute {
   EXTRACTOR = 'extractor',
   USERS = 'users',
   EDIT_ORDER = 'edit-order',
-  USER_PROFILE = 'user-profile'
+  USER_PROFILE = 'user-profile',
+  CLUB_ORDER_FILE_DETAIL = 'club-order-file-detail',
+  SHIPMENT_DETAIL = 'shipment-detail'
 }
 
 export const STATUS_OPTIONS = [

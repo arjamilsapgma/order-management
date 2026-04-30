@@ -101,6 +101,37 @@ export const api = {
     return res.json();
   },
 
+  async getShipments(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/shipment/list`);
+    if (!res.ok) throw new Error('Failed to fetch shipments');
+    return res.json();
+  },
+
+  async getShipmentDetail(id: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/shipment/${id}`);
+    if (!res.ok) throw new Error('Failed to fetch shipment detail');
+    return res.json();
+  },
+
+  async uploadShipment(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/shipment/upload`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to upload shipment');
+    return res.json();
+  },
+
+  async deleteShipment(id: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/shipment/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete shipment');
+    return res.json();
+  },
+
   async getMasterReconKeys(): Promise<Record<string, boolean>> {
     const res = await fetch(`${API_BASE}/master-recon-keys`);
     if (!res.ok) throw new Error('Failed to fetch master recon keys');

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import * as xlsx from 'xlsx';
+import * as XLSX from 'xlsx';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface DuplicateOrder {
   orderId: string;
@@ -14,6 +15,7 @@ interface ClubOrderMetrics {
   totalRushOrders: number;
   totalMTOOrders: number;
   totalMultipleSportsOrders: number;
+  totalNonRushOrders: number;
   totalDuplicateOrders: number;
 }
 
@@ -28,7 +30,11 @@ interface FileData {
   batch: string;
 }
 
-export const ClubOrder: React.FC = () => {
+interface ClubOrderProps {
+  onViewFile?: (clubOrderId: string, fileName: string) => void;
+}
+
+export const ClubOrder: React.FC<ClubOrderProps> = ({ onViewFile }) => {
   const { userProfile } = useAuth();
   const isViewer = userProfile?.role === 'viewer';
   const [batchNumber, setBatchNumber] = useState('');
@@ -83,6 +89,7 @@ export const ClubOrder: React.FC = () => {
               totalRushOrders: data.metrics?.totalRushOrders || 0,
               totalMTOOrders: data.metrics?.totalMTOOrders || 0,
               totalMultipleSportsOrders: data.metrics?.totalMultipleSportsOrders || 0,
+              totalNonRushOrders: data.metrics?.totalNonRushOrders || 0,
               totalDuplicateOrders: data.metrics?.totalDuplicateOrders || 0
             },
             files: data.files || {}
@@ -145,11 +152,11 @@ export const ClubOrder: React.FC = () => {
       const parsedFiles = [];
       for (const file of files) {
         const buffer = await file.arrayBuffer();
-        const workbook = xlsx.read(buffer, { type: 'array' });
+        const workbook = XLSX.read(buffer, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         // { raw: false } ensures cells are parsed using their formatted text instead of raw numerical serials (which fixes date numbers like 46126)
-        const rows = xlsx.utils.sheet_to_json(sheet, { raw: false, dateNF: 'm/d/yyyy' });
+        const rows = XLSX.utils.sheet_to_json(sheet, { raw: false, dateNF: 'm/d/yyyy' });
         
         parsedFiles.push({
           fileName: file.name,
@@ -283,69 +290,12 @@ export const ClubOrder: React.FC = () => {
             Current Date: {new Date().toLocaleDateString()} | Upload Excel files to process orders and check for duplicates.
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col">
-            <label className="text-xs font-bold text-slate-500 uppercase">Batch Number <span className="text-red-500">*</span></label>
-            <input 
-              type="text" 
-              value={batchNumber}
-              onChange={(e) => setBatchNumber(e.target.value)}
-              placeholder="Enter Batch #"
-              disabled={isViewer}
-              className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none disabled:opacity-50"
-            />
-          </div>
-          <button 
-            onClick={handleUpload}
-            disabled={isUploading || files.length === 0 || !batchNumber || isViewer}
-            className="mt-4 px-6 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium rounded-lg shadow-sm transition-colors"
-          >
-            {isUploading ? 'Processing...' : 'Upload & Process'}
-          </button>
-        </div>
       </div>
-
-      {/* Drag & Drop Zone */}
-      <div 
-        onDragOver={isViewer ? undefined : onDragOver}
-        onDragLeave={isViewer ? undefined : onDragLeave}
-        onDrop={isViewer ? undefined : onDrop}
-        className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${isViewer ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}
-      >
-        <div className="flex flex-col items-center justify-center">
-          <svg className="w-12 h-12 text-slate-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          <p className="text-lg font-medium text-slate-700 mb-1">Drag & drop Excel files here</p>
-          <p className="text-sm text-slate-500 mb-4">or click to browse (.xls, .xlsx)</p>
-          <label className="cursor-pointer px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm">
-            Browse Files
-            <input type="file" disabled={isViewer} multiple accept=".xls,.xlsx" className="hidden" onChange={handleFileSelect} />
-          </label>
-        </div>
-      </div>
-
-      {/* Selected Files List */}
-      {files.length > 0 && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wider">Selected Files ({files.length})</h3>
-          <div className="flex flex-wrap gap-2">
-            {files.map((file, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg text-sm border border-slate-200">
-                <span className="text-slate-700 truncate max-w-[200px]">{file.name}</span>
-                <button onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-500">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Dashboard Metrics */}
       {uploadResult && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-brand-500">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Orders</p>
               <p className="text-3xl font-bold text-slate-800">{uploadResult.metrics.totalOrder}</p>
@@ -353,6 +303,10 @@ export const ClubOrder: React.FC = () => {
             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-amber-500">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Rush Orders</p>
               <p className="text-3xl font-bold text-slate-800">{uploadResult.metrics.totalRushOrders}</p>
+            </div>
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-indigo-500">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total NON-RUSH</p>
+              <p className="text-3xl font-bold text-slate-800">{uploadResult.metrics.totalNonRushOrders}</p>
             </div>
             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-purple-500">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total MTO Orders</p>
@@ -366,6 +320,28 @@ export const ClubOrder: React.FC = () => {
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Duplicates Found</p>
               <p className="text-3xl font-bold text-rose-600">{uploadResult.metrics.totalDuplicateOrders}</p>
               {uploadResult.duplicates.length > 0 && <p className="text-xs text-rose-500 mt-1">Click to view</p>}
+            </div>
+          </div>
+
+          {/* Chart Visualization */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Orders Distribution by File</h3>
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={Object.entries(uploadResult.files).map(([fileName, data]: [string, any]) => ({
+                  name: data.originalName ? data.originalName.substring(0, 15) + '...' : fileName.substring(0, 15) + '...',
+                  Orders: data.totalOrder,
+                  Qty: data.totalQty
+                }))} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                  <XAxis dataKey="name" tick={{fontSize: 12, fill: '#64748B'}} axisLine={false} tickLine={false} />
+                  <YAxis tick={{fontSize: 12, fill: '#64748B'}} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                  <Bar dataKey="Orders" fill="#3B82F6" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                  <Bar dataKey="Qty" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
@@ -388,7 +364,18 @@ export const ClubOrder: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {Object.entries(uploadResult.files).map(([fileName, data]: [string, any]) => (
                     <tr key={fileName} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 text-sm font-medium text-slate-800">{data.originalName || fileName.replace(/_DOT_/g, '.')}</td>
+                      <td className="p-4 text-sm font-medium text-slate-800">
+                        {onViewFile && uploadResult.clubOrderId ? (
+                          <button 
+                            onClick={() => onViewFile(uploadResult.clubOrderId!, fileName)}
+                            className="text-brand-600 hover:text-brand-800 hover:underline text-left"
+                          >
+                            {data.originalName || fileName.replace(/_DOT_/g, '.')}
+                          </button>
+                        ) : (
+                          data.originalName || fileName.replace(/_DOT_/g, '.')
+                        )}
+                      </td>
                       <td className="p-4 text-sm text-slate-600">{data.totalOrder}</td>
                       <td className="p-4 text-sm text-slate-600">{data.totalQty}</td>
                       <td className="p-4">
@@ -429,6 +416,70 @@ export const ClubOrder: React.FC = () => {
           </div>
         </>
       )}
+      {/* Upload Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-2">
+        <h2 className="text-lg font-bold text-slate-800 mb-4">Upload New Files</h2>
+        
+        <div className="flex flex-col md:flex-row gap-6 mb-6">
+          <div className="flex flex-col flex-1">
+            <label className="text-xs font-bold text-slate-500 uppercase mb-2">Batch Number <span className="text-red-500">*</span></label>
+            <input 
+              type="text" 
+              value={batchNumber}
+              onChange={(e) => setBatchNumber(e.target.value)}
+              placeholder="Enter Batch #"
+              disabled={isViewer}
+              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none disabled:opacity-50"
+            />
+          </div>
+          <div className="flex items-end">
+            <button 
+              onClick={handleUpload}
+              disabled={isUploading || files.length === 0 || !batchNumber || isViewer}
+              className="px-8 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-medium rounded-lg shadow-sm transition-colors h-[42px]"
+            >
+              {isUploading ? 'Processing...' : 'Upload & Process'}
+            </button>
+          </div>
+        </div>
+
+        {/* Drag & Drop Zone */}
+        <div 
+          onDragOver={isViewer ? undefined : onDragOver}
+          onDragLeave={isViewer ? undefined : onDragLeave}
+          onDrop={isViewer ? undefined : onDrop}
+          className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${isViewer ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
+        >
+          <div className="flex flex-col items-center justify-center">
+            <svg className="w-12 h-12 text-slate-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p className="text-lg font-medium text-slate-700 mb-1">Drag & drop Excel files here</p>
+            <p className="text-sm text-slate-500 mb-4">or click to browse (.xls, .xlsx)</p>
+            <label className="cursor-pointer px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm">
+              Browse Files
+              <input type="file" disabled={isViewer} multiple accept=".xls,.xlsx" className="hidden" onChange={handleFileSelect} />
+            </label>
+          </div>
+        </div>
+
+        {/* Selected Files List */}
+        {files.length > 0 && (
+          <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <h3 className="text-sm font-bold text-slate-700 mb-3 uppercase tracking-wider">Selected Files ({files.length})</h3>
+            <div className="flex flex-wrap gap-2">
+              {files.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg text-sm border border-slate-200 shadow-sm">
+                  <span className="text-slate-700 truncate max-w-[200px]">{file.name}</span>
+                  <button onClick={() => removeFile(idx)} className="text-slate-400 hover:text-red-500">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Duplicates Modal */}
       {showDuplicatesModal && uploadResult && (

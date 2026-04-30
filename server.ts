@@ -14,6 +14,9 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Serve extrator directory as static files
+app.use('/extrator', express.static(path.join(process.cwd(), 'extrator')));
+
 // Read-only Viewer Mode Middleware
 app.use((req, res, next) => {
   const isViewer = req.headers['x-viewer-mode'] === 'true';
@@ -525,6 +528,7 @@ app.post('/api/club-order/upload', async (req, res) => {
     const docRushOrderIds = new Set<string>();
     const docMTOOrderIds = new Set<string>();
     const docMultipleSportsOrderIds = new Set<string>();
+    const docNonRushOrderIds = new Set<string>();
     let docTotalQty = 0;
 
     for (const file of files) {
@@ -538,10 +542,12 @@ app.post('/api/club-order/upload', async (req, res) => {
       let fileTotalQty = 0;
       const fileMaterials = new Set<string>();
       const fileSalesDocs = new Set<string>();
+      const fileRawData: any[] = [];
+      const fileCodes: string[] = [];
 
       const lowerName = fileName.toLowerCase();
       const isRush = lowerName.includes('rush rs') || lowerName.includes('rush rsa');
-      const isMultipleSports = lowerName.includes('volleyball') || lowerName.includes('basketball') || lowerName.includes('hokey');
+      const isMultipleSports = ['multiple sports', 'baseball', 'hockey', 'volleyball', 'bombers'].some(k => lowerName.includes(k));
 
       for (const row of data as any[]) {
         const orderId = String(row['Order ID'] || row['OrderNumber'] || row['Order#'] || '');
@@ -560,10 +566,20 @@ app.post('/api/club-order/upload', async (req, res) => {
         if (isRush) docRushOrderIds.add(orderId);
         if (isMultipleSports) docMultipleSportsOrderIds.add(orderId);
         if (lowerName.includes('mto')) docMTOOrderIds.add(orderId);
+        if (lowerName.includes('multiple clubs')) docNonRushOrderIds.add(orderId);
 
         // Check for duplicate in orders_management explicitly combining order ID and material
         const material = String(row['Material'] || '');
         const detailKey = `${orderId}${material}`;
+
+        fileRawData.push({
+          orderId,
+          salesDocument: String(row['Sales Document'] || ''),
+          productQty: qty,
+          material,
+          clubName: String(row['Club Name'] || '')
+        });
+        fileCodes.push(detailKey);
 
         // Ensure we don't treat different rows with the same order ID but different materials as duplicates
         const existingOrder = await db.collection('orders_management').findOne({ Code: detailKey });
@@ -591,7 +607,7 @@ app.post('/api/club-order/upload', async (req, res) => {
           else if (lowerName.includes('mto')) orderType = 'MTO';
 
           let cddOffset = 4;
-          if (lowerName.startsWith('replacement')) cddOffset = 2;
+          if (lowerName.includes('replacment as of') || lowerName.includes('loaners as of')) cddOffset = 2;
           const cddDate = new Date();
           cddDate.setDate(cddDate.getDate() + cddOffset);
           const cdd = `${cddDate.getMonth() + 1}/${cddDate.getDate()}/${cddDate.getFullYear()}`;
@@ -637,7 +653,9 @@ app.post('/api/club-order/upload', async (req, res) => {
           salesDocs: Array.from(fileSalesDocs),
           assigned: "",
           clubStatus: "Not share",
-          batch: batchNumber
+          batch: batchNumber,
+          rawData: fileRawData,
+          code: fileCodes
         };
 
         Array.from(fileOrderIds).forEach(id => docOrderIds.add(id));
@@ -660,6 +678,7 @@ app.post('/api/club-order/upload', async (req, res) => {
         rushOrderIds: Array.from(docRushOrderIds),
         mtoOrderIds: Array.from(docMTOOrderIds),
         multipleSportsOrderIds: Array.from(docMultipleSportsOrderIds),
+        nonRushOrderIds: Array.from(docNonRushOrderIds),
         files: clubOrderFiles
       };
       clubOrderResult = await db.collection('club_order').insertOne(clubOrderDoc);
@@ -674,6 +693,7 @@ app.post('/api/club-order/upload', async (req, res) => {
     const aggregatedRush = new Set<string>();
     const aggregatedMTO = new Set<string>();
     const aggregatedMultipleSports = new Set<string>();
+    const aggregatedNonRush = new Set<string>();
     const aggregatedFiles: any = {};
     const batchNumbers = new Set<string>();
 
@@ -685,6 +705,7 @@ app.post('/api/club-order/upload', async (req, res) => {
       (order.rushOrderIds || []).forEach((id: string) => aggregatedRush.add(id));
       (order.mtoOrderIds || []).forEach((id: string) => aggregatedMTO.add(id));
       (order.multipleSportsOrderIds || []).forEach((id: string) => aggregatedMultipleSports.add(id));
+      (order.nonRushOrderIds || []).forEach((id: string) => aggregatedNonRush.add(id));
       
       if (order.files) {
         Object.assign(aggregatedFiles, order.files);
@@ -703,6 +724,7 @@ app.post('/api/club-order/upload', async (req, res) => {
         totalRushOrders: aggregatedRush.size,
         totalMTOOrders: aggregatedMTO.size,
         totalMultipleSportsOrders: aggregatedMultipleSports.size,
+        totalNonRushOrders: aggregatedNonRush.size,
         totalDuplicateOrders: duplicates.length // Only duplicate count from the current upload
       },
       files: aggregatedFiles
@@ -744,11 +766,11 @@ app.put('/api/club-order/update-status', async (req, res) => {
     // Also sequentially update the 'orders_management' status for all rows in this file batch to keep DB in sync
     const orderDoc = await db.collection('club_order').findOne({ _id: new ObjectId(clubOrderId) });
     if (orderDoc && orderDoc.files && orderDoc.files[safeFileName]) {
-        const orderIds = orderDoc.files[safeFileName].orderIds || [];
-        if (orderIds.length > 0) {
+        const codes = orderDoc.files[safeFileName].code || [];
+        if (codes.length > 0) {
             await db.collection('orders_management').updateMany(
-                { OrderNumber: { $in: orderIds } },
-                { $set: { status: status } }
+                { Code: { $in: codes } },
+                { $set: { Status: status, status: status } }
             );
         }
     }
@@ -780,6 +802,7 @@ app.get('/api/club-order/latest', async (req, res) => {
     const aggregatedRush = new Set<string>();
     const aggregatedMTO = new Set<string>();
     const aggregatedMultipleSports = new Set<string>();
+    const aggregatedNonRush = new Set<string>();
     const aggregatedFiles: any = {};
     const batchNumbers = new Set<string>();
     
@@ -794,6 +817,7 @@ app.get('/api/club-order/latest', async (req, res) => {
       (order.rushOrderIds || []).forEach((id: string) => aggregatedRush.add(id));
       (order.mtoOrderIds || []).forEach((id: string) => aggregatedMTO.add(id));
       (order.multipleSportsOrderIds || []).forEach((id: string) => aggregatedMultipleSports.add(id));
+      (order.nonRushOrderIds || []).forEach((id: string) => aggregatedNonRush.add(id));
       
       if (order.files) {
         Object.assign(aggregatedFiles, order.files);
@@ -811,6 +835,7 @@ app.get('/api/club-order/latest', async (req, res) => {
         totalRushOrders: aggregatedRush.size,
         totalMTOOrders: aggregatedMTO.size,
         totalMultipleSportsOrders: aggregatedMultipleSports.size,
+        totalNonRushOrders: aggregatedNonRush.size,
         totalDuplicateOrders: 0 // Will not aggregate historical duplicates
       },
       files: aggregatedFiles
@@ -818,6 +843,24 @@ app.get('/api/club-order/latest', async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch latest club order' });
+  }
+});
+
+app.get('/api/club-order/:id/file/:fileName', async (req, res) => {
+  try {
+    const { id, fileName } = req.params;
+    const orderDoc = await db.collection('club_order').findOne({ _id: new ObjectId(id) });
+    if (!orderDoc || !orderDoc.files) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const safeFileName = fileName.replace(/\./g, '_DOT_');
+    const fileData = orderDoc.files[safeFileName];
+    if (!fileData) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    res.json(fileData);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch file details' });
   }
 });
 
@@ -833,6 +876,179 @@ app.get('/api/last-updated', async (req, res) => {
     res.json({ lastUpdated: lastDate.toISOString() });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch last updated date' });
+  }
+});
+
+// --- Shipment Routes ---
+
+app.post('/api/shipment/upload', async (req, res) => {
+  try {
+    const { fileName, shipmentDate, rows } = req.body;
+    
+    if (!fileName || !shipmentDate || !rows || !Array.isArray(rows)) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const match = fileName.match(/BD(\d{4})/i);
+    if (!match) {
+      return res.status(400).json({ error: 'Filename must contain BD followed by 4 digits (e.g. BD1205)' });
+    }
+    const shipment_number = `BD${match[1]}`;
+
+    // Normalize keys in case of leading/trailing spaces
+    const normalizedRows = rows.map((row: any) => {
+      const normalizedRow: any = {};
+      for (const key in row) {
+        normalizedRow[key.trim()] = row[key];
+      }
+      return normalizedRow;
+    });
+
+    const uniqueOrders = new Set<string>();
+    const uniquePOs = new Set<string>();
+    let totalQty = 0;
+
+    const UPSTRACKING: string[] = [];
+    const ORDER: number[] = [];   // store as integer
+    const SKU_ITEM: string[] = [];
+    const QUANTITY: number[] = [];
+    const CLUB: string[] = [];
+    const PO: string[] = [];
+    const code: string[] = [];
+    const SD: string[] = [];
+
+    const shipmentDateObj = new Date(shipmentDate);
+    const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' });
+    const monthStr = monthFormatter.format(shipmentDateObj);
+
+
+    const codesToUpdate = new Set<string>();
+
+    for (const row of normalizedRows) {
+      // Read using exact Excel column names (after key trimming done above)
+      const orderNum = parseInt(String(row['ORDER'] || row['ORDER #'] || '0').trim(), 10) || 0;
+      const poNum = String(row['PO'] || '').trim();
+      const sku = String(row['SKU/ ITEM'] || row['SKU/ ITEM #'] || '').trim();
+      const qty = Number(row['QUANTITY']) || 0;
+      const club = String(row['CLUB'] || '').trim();
+      const tracking = String(row['UPS TRACKING # (NO SPACE)'] || row['UPSTRACKING'] || '').trim();
+
+      const rowCode = `${orderNum}${sku}`;
+
+      if (orderNum) uniqueOrders.add(String(orderNum));
+      if (poNum) uniquePOs.add(poNum);
+      totalQty += qty;
+
+      UPSTRACKING.push(tracking);
+      ORDER.push(orderNum);   // integer, correctly typed as number[]
+      SKU_ITEM.push(sku);
+      QUANTITY.push(qty);
+      CLUB.push(club);
+      PO.push(poNum);
+      code.push(rowCode);
+
+      codesToUpdate.add(rowCode);
+    }
+
+    const ordersCollection = db.collection('orders_management');
+    const matchedOrders = await ordersCollection.find({ Code: { $in: Array.from(codesToUpdate) } }).toArray();
+    
+    const codeToSD = new Map<string, string>();
+    for (const order of matchedOrders) {
+      if (!codeToSD.has(order.Code) && order.SalesDocument) {
+        codeToSD.set(order.Code, order.SalesDocument);
+      }
+    }
+
+    for (const rowCode of code) {
+      SD.push(codeToSD.get(rowCode) || '');
+    }
+
+    const shipmentDoc = {
+      shipment_number,
+      total_order: uniqueOrders.size,
+      total_qty: totalQty,
+      month: monthStr,
+      total_po: uniquePOs.size,
+      UPSTRACKING,
+      ORDER,
+      PO,
+      "SKU/ ITEM": SKU_ITEM,
+      QUANTITY,
+      CLUB,
+      SD,
+      code,
+      uploadDate: new Date(),
+      shipmentDate: shipmentDateObj
+    };
+
+    const shipmentCollection = db.collection('shipment');
+    const insertResult = await shipmentCollection.insertOne(shipmentDoc);
+
+    const bulkOps = code.map((c, index) => {
+      const trackingNum = UPSTRACKING[index];
+      return {
+        updateMany: {
+          filter: { Code: c },
+          update: {
+            $set: {
+              Status: `Shipped Under ${shipment_number}`,
+              UPSTrackingNumber: trackingNum
+            }
+          }
+        }
+      };
+    });
+
+    if (bulkOps.length > 0) {
+      await ordersCollection.bulkWrite(bulkOps);
+    }
+
+    res.json({ success: true, shipmentId: insertResult.insertedId, shipment_number });
+
+  } catch (error: any) {
+    console.error('Shipment upload error:', error);
+    res.status(500).json({ error: error.message || 'Failed to process shipment' });
+  }
+});
+
+app.get('/api/shipment/list', async (req, res) => {
+  try {
+    const shipments = await db.collection('shipment')
+      .find({}, { projection: { 
+        UPSTRACKING: 0, ORDER: 0, "SKU/ ITEM": 0, QUANTITY: 0, CLUB: 0, SD: 0, code: 0 
+      }})
+      .sort({ shipmentDate: -1 })
+      .toArray();
+
+    res.json(shipments);
+  } catch (error) {
+    console.error('Failed to list shipments', error);
+    res.status(500).json({ error: 'Failed to list shipments' });
+  }
+});
+
+app.get('/api/shipment/:id', async (req, res) => {
+  try {
+    const shipment = await db.collection('shipment').findOne({ _id: new ObjectId(req.params.id) });
+    if (!shipment) {
+      return res.status(404).json({ error: 'Shipment not found' });
+    }
+    res.json(shipment);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch shipment' });
+  }
+});
+
+app.delete('/api/shipment/:id', async (req, res) => {
+  try {
+    const result = await db.collection('shipment').deleteOne({ _id: new ObjectId(req.params.id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'Shipment not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete shipment' });
   }
 });
 

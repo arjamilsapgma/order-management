@@ -1,213 +1,376 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../src/services/api';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import * as XLSX from 'xlsx';
 
-declare const XLSX: any;
-
-export const Shipment: React.FC = () => {
+export const Shipment: React.FC<{ onViewShipment?: (id: string) => void }> = ({ onViewShipment }) => {
   const { userProfile } = useAuth();
   const isAdmin = userProfile?.role === 'admin';
   const isViewer = userProfile?.role === 'viewer';
 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [results, setResults] = useState<{ fileName: string; bdNumber: string; updatedCount: number; notFoundCount: number }[]>([]);
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const normalizeHeader = (header: string): string => {
-    return header.toString().trim().toLowerCase().replace(/[\s/]/g, '');
+  // Upload State
+  const [shipmentDate, setShipmentDate] = useState<string>('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Chart State
+  const [selectedMonth, setSelectedMonth] = useState<string>('All');
+
+  // Search State
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const fetchShipments = async () => {
+    try {
+      setLoading(true);
+      const data = await api.getShipments();
+      setShipments(data || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch shipments');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const extractBDNumber = (filename: string): string => {
-    // Looks for patterns like BD followed by digits
-    const match = filename.match(/BD\d+/i);
-    return match ? match[0].toUpperCase() : 'UNKNOWN_BD';
-  };
+  useEffect(() => {
+    fetchShipments();
+  }, []);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    if (typeof XLSX === 'undefined') {
-      setError("XLSX library not loaded. Refresh the page.");
+  // Compute Metrics
+  const totalShipments = shipments.length;
+  const totalOrders = shipments.reduce((sum, s) => sum + (s.total_order || 0), 0);
+  const totalQty = shipments.reduce((sum, s) => sum + (s.total_qty || 0), 0);
+  const latestShipment = shipments.length > 0 ? shipments[0] : null;
+  const latestMonthQty = latestShipment ? latestShipment.total_qty : 0;
+
+  // Chart 1: Month-wise Qty Shipped
+  const monthWiseData = useMemo(() => {
+    const map = new Map<string, number>();
+    shipments.forEach(s => {
+      const month = s.month || 'Unknown';
+      map.set(month, (map.get(month) || 0) + (s.total_qty || 0));
+    });
+    return Array.from(map.entries()).map(([month, qty]) => ({ name: month, qty })).reverse();
+  }, [shipments]);
+
+  const uniqueMonths = Array.from(new Set(shipments.map(s => s.month).filter(Boolean)));
+
+  // Chart 2: Shipment Qty per Month
+  const shipmentPerMonthData = useMemo(() => {
+    let filtered = shipments;
+    if (selectedMonth && selectedMonth !== 'All') {
+      filtered = shipments.filter(s => s.month === selectedMonth);
+    }
+    return filtered.map(s => ({
+      name: s.shipment_number,
+      qty: s.total_qty
+    })).reverse();
+  }, [shipments, selectedMonth]);
+
+  // Filtered Table Data
+  const filteredShipments = useMemo(() => {
+    if (!searchTerm) return shipments;
+    const lowerSearch = searchTerm.toLowerCase();
+    return shipments.filter(s =>
+      (s.shipment_number && s.shipment_number.toLowerCase().includes(lowerSearch)) ||
+      (s.month && s.month.toLowerCase().includes(lowerSearch))
+    );
+  }, [shipments, searchTerm]);
+
+  // Handle Upload
+  const processExcelAndUpload = async (file: File) => {
+    if (!shipmentDate) {
+      setError('Please select a shipment date before uploading.');
       return;
     }
-
-    setIsProcessing(true);
+    setIsUploading(true);
     setError(null);
-    const uploadedFiles = Array.from(e.target.files) as File[];
-    const processingResults = [];
-
     try {
-      for (const file of uploadedFiles) {
-        const bdNumber = extractBDNumber(file.name);
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        // Look for the "run" tab
-        const runSheetName = workbook.SheetNames.find((name: string) => name.toLowerCase() === 'run');
-        if (!runSheetName) {
-          processingResults.push({ fileName: file.name, bdNumber, updatedCount: 0, notFoundCount: 0, error: 'No "run" tab found' });
-          continue;
-        }
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
 
-        const worksheet = workbook.Sheets[runSheetName];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet);
+      const runSheetName = workbook.SheetNames.find(n => n === 'RUN');
+      if (!runSheetName) throw new Error('Sheet named "RUN" not found in the Excel file.');
 
-        const updates: Record<string, any> = {};
-        let updatedCount = 0;
-        let notFoundCount = 0;
+      const worksheet = workbook.Sheets[runSheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet);
 
-        // Fetch current master_recon_file to check existence
-        const masterData = await api.getMasterReconKeys();
+      await api.uploadShipment({
+        fileName: file.name,
+        shipmentDate,
+        rows
+      });
 
-        rawJson.forEach((row: any) => {
-          let po = '';
-          let sku = '';
-
-          Object.keys(row).forEach(key => {
-            const normKey = normalizeHeader(key);
-            if (normKey === 'po') po = String(row[key]).trim();
-            else if (normKey === 'skuitem') sku = String(row[key]).trim();
-          });
-
-          if (po && sku) {
-            const compositeKey = `${po}${sku}`;
-            if (masterData[compositeKey]) {
-              updates[`order_management/master_recon_file/${compositeKey}/Status`] = `Order shared under ${bdNumber}`;
-              updatedCount++;
-            } else {
-              notFoundCount++;
-            }
-          }
-        });
-
-        if (Object.keys(updates).length > 0) {
-          await api.updateMasterReconStatus(updates);
-        }
-
-        processingResults.push({
-          fileName: file.name,
-          bdNumber,
-          updatedCount,
-          notFoundCount
-        });
-      }
-      setResults(prev => [...prev, ...processingResults]);
+      setShipmentDate('');
+      await fetchShipments();
     } catch (err: any) {
       console.error(err);
-      setError("Error processing Shipment files. Ensure the 'run' tab exists and columns 'PO' and 'SKU/ ITEM #' are present.");
+      setError(err.message || 'Failed to process file.');
     } finally {
-      setIsProcessing(false);
-      e.target.value = '';
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processExcelAndUpload(e.target.files[0]);
+    }
+  };
+
+  const formatDate = (dateStr: string) =>
+    dateStr ? new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+
+  const downloadExcel = (wb: any, filename: string) => {
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    const exportData = filteredShipments.map((s, index) => ({
+      'Serial No.': index + 1,
+      'Shipment Date': formatDate(s.shipmentDate),
+      'Shipment Month': s.month,
+      'Shipment Number': s.shipment_number,
+      'Total Order': s.total_order,
+      'Total PO': s.total_po,
+      'Total Qty': s.total_qty
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Shipments');
+    downloadExcel(wb, 'Shipments_Export.xlsx');
+  };
+
+  const handleDelete = async (id: string, shipmentNumber: string) => {
+    if (!confirm(`Delete shipment ${shipmentNumber}? This will permanently remove all data.`)) return;
+    try {
+      await api.deleteShipment(id);
+      setShipments(prev => prev.filter(s => s._id !== id));
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete shipment');
     }
   };
 
   return (
-    <div className="space-y-8 pb-20 max-w-4xl mx-auto">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold text-slate-800">Shipment Processing</h1>
-        <p className="text-slate-500 text-sm">Upload ACP Reports to update order status in the Master File.</p>
-      </div>
-
-      <div className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${isAdmin ? 'border-brand-300 bg-brand-50/50 hover:bg-brand-50 cursor-pointer shadow-inner' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
-        <input 
-          type="file" 
-          multiple 
-          accept=".xlsx,.xls" 
-          onChange={handleFileUpload} 
-          disabled={!isAdmin || isProcessing} 
-          className="hidden" 
-          id="shipment-upload" 
-        />
-        <label htmlFor="shipment-upload" className="flex flex-col items-center justify-center cursor-pointer">
-          {isProcessing ? (
-            <div className="flex flex-col items-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mb-4"></div>
-              <span className="text-brand-600 font-bold uppercase tracking-widest text-xs">Scanning & Syncing...</span>
-            </div>
-          ) : (
-            <>
-              <div className="p-5 rounded-full bg-white text-brand-600 shadow-soft mb-4 group-hover:scale-110 transition-transform">
-                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-1">{isAdmin ? 'Upload Final ACP Reports' : 'Admin Only Access'}</h3>
-              <p className="text-sm text-slate-500 font-medium">Select Excel files containing the 'run' tab</p>
-            </>
-          )}
-        </label>
+    <div className="space-y-6 pb-12">
+      {/* Header & Global Export */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Shipment Management</h1>
+          <p className="text-sm text-slate-500">Track and manage all shipments and UPS tracking numbers.</p>
+        </div>
+        <button
+          onClick={handleExport}
+          className="px-4 py-2 bg-brand-50 text-brand-700 hover:bg-brand-100 font-medium rounded-lg shadow-sm transition-colors flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+          Export Shipments
+        </button>
       </div>
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center shadow-sm">
-          <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          <span className="text-sm font-medium">{error}</span>
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-center">
+          <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          {error}
         </div>
       )}
 
-      {results.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden animate-fade-in-up">
-          <div className="px-8 py-6 border-b flex justify-between items-center bg-white">
-            <div>
-              <h3 className="text-xl font-bold text-slate-800 tracking-tight">Sync Report</h3>
-              <p className="text-sm text-slate-500 font-medium">Results of latest shipment uploads</p>
-            </div>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Shipment</span>
+          <span className="text-3xl font-black text-brand-600">{totalShipments}</span>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Shipped Orders</span>
+          <span className="text-3xl font-black text-slate-800">{totalOrders.toLocaleString()}</span>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Qty Shipped</span>
+          <span className="text-3xl font-black text-emerald-600">{totalQty.toLocaleString()}</span>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Latest Month Qty</span>
+          <span className="text-3xl font-black text-indigo-600">{latestMonthQty.toLocaleString()}</span>
+        </div>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-800 mb-6">Month-wise Qty Shipped</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthWiseData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Bar dataKey="qty" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50 text-left">
-                <tr>
-                  <th className="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">File Name</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-center">BD #</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Updated</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Not in Master</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-50">
-                {results.map((res, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-8 py-5">
-                      <div className="text-sm font-bold text-slate-900 truncate max-w-xs">{res.fileName}</div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold text-slate-800">Shipment Qty per Month</h3>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+            >
+              <option value="All">All Months</option>
+              {uniqueMonths.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={shipmentPerMonthData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Bar dataKey="qty" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="font-bold text-slate-800">All Shipments Information</h3>
+          <div className="relative">
+            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input
+              type="text"
+              placeholder="Search by ID or Month..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none w-64"
+            />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white border-b border-slate-200">
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">#</th>
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Shipment Date</th>
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Shipment Number</th>
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Total Order</th>
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Total PO</th>
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Total Qty</th>
+                <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr><td colSpan={7} className="p-8 text-center text-slate-500">Loading shipments...</td></tr>
+              ) : filteredShipments.length === 0 ? (
+                <tr><td colSpan={7} className="p-8 text-center text-slate-500">No shipments found.</td></tr>
+              ) : (
+                filteredShipments.map((s, index) => (
+                  <tr key={s._id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4 text-sm text-slate-600">{index + 1}</td>
+                    <td className="p-4 text-sm font-medium text-slate-800">{formatDate(s.shipmentDate)}</td>
+                    <td className="p-4 text-sm">
+                      <button
+                        onClick={() => onViewShipment && onViewShipment(s._id)}
+                        className="text-brand-600 font-bold hover:underline hover:text-brand-800"
+                      >
+                        {s.shipment_number}
+                      </button>
                     </td>
-                    <td className="px-6 py-5 text-center">
-                      <span className="px-3 py-1 bg-brand-50 rounded-lg text-xs font-black text-brand-700 border border-brand-100">{res.bdNumber}</span>
-                    </td>
-                    <td className="px-6 py-5 text-center">
-                      <span className="text-sm font-bold text-emerald-600">{res.updatedCount}</span>
-                    </td>
-                    <td className="px-6 py-5 text-center">
-                      <span className="text-sm font-bold text-slate-400">{res.notFoundCount}</span>
+                    <td className="p-4 text-sm text-slate-600 text-right">{s.total_order?.toLocaleString()}</td>
+                    <td className="p-4 text-sm text-slate-600 text-right">{s.total_po?.toLocaleString()}</td>
+                    <td className="p-4 text-sm text-emerald-600 font-medium text-right">{s.total_qty?.toLocaleString()}</td>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleDelete(s._id, s.shipment_number)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                        title="Delete shipment"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Upload Section */}
+      {!isViewer && (
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mt-8">
+          <h2 className="text-lg font-bold text-slate-800 mb-4">Upload New Shipment</h2>
+
+          <div className="flex flex-col sm:flex-row gap-6 mb-6 items-end">
+            <div className="flex flex-col flex-1">
+              <label className="text-xs font-bold text-slate-500 uppercase mb-2">Shipment Date <span className="text-red-500">*</span></label>
+              <input
+                type="date"
+                value={shipmentDate}
+                onChange={(e) => setShipmentDate(e.target.value)}
+                className="px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none w-full"
+              />
+            </div>
+            <div className="flex-1">
+              <label
+                className={`flex justify-center items-center px-8 py-2.5 rounded-lg shadow-sm font-medium transition-colors cursor-pointer w-full text-center ${(!shipmentDate || isUploading) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-brand-600 hover:bg-brand-700 text-white'}`}
+              >
+                {isUploading ? 'Processing...' : 'Select Excel File'}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileSelect}
+                  disabled={!shipmentDate || isUploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                processExcelAndUpload(e.dataTransfer.files[0]);
+              }
+            }}
+            className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors ${(!shipmentDate || isUploading) ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
+          >
+            <div className="flex flex-col items-center justify-center">
+              <svg className="w-12 h-12 text-slate-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p className="text-lg font-medium text-slate-700 mb-1">Drag & drop "Final ACP Report BDXXXX.xlsx" here</p>
+              <p className="text-sm text-slate-500 mb-4">Requires a "run" tab</p>
+            </div>
           </div>
         </div>
       )}
-
-      <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-soft">
-        <h4 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-widest">How it works</h4>
-        <ul className="space-y-3 text-sm text-slate-600">
-          <li className="flex items-start gap-3">
-            <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[10px] font-bold mt-0.5">1</div>
-            <span>File must have a tab named <b>"run"</b>.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[10px] font-bold mt-0.5">2</div>
-            <span>Columns <b>"PO"</b> and <b>"SKU/ ITEM #"</b> are used to identify the matching record.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[10px] font-bold mt-0.5">3</div>
-            <span>BD Number is extracted automatically from the filename (e.g., <i>Final ACP Report BD2822</i>).</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[10px] font-bold mt-0.5">4</div>
-            <span>Matching records in Master Reconciliation will have their status updated to <i>"Order shared under [BD Number]"</i>.</span>
-          </li>
-        </ul>
-      </div>
     </div>
   );
 };
